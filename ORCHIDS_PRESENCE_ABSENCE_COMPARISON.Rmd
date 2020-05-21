@@ -1,0 +1,243 @@
+---
+title: "ORCHIDS_PRESENCE_ABSENCE_COMPARISON"
+author: "Joe Gunn"
+date: "5/21/2020"
+output: html_document
+---
+
+## Libraries needed for analysis
+```{r libraries, echo=FALSE}
+library(readxl)
+library(cowplot)
+library(tidyverse)
+library(vegan)
+library(nlme)
+library(lme4)
+library(factoextra)
+library(viridis)
+library(bbmle)
+library(car)
+library(multcomp)
+```
+
+## Metadata
+```{r}
+#Read in site-level metadata and clean
+site_metadata <- read_excel("../../data/metadata/site_metadata.xlsx")
+
+site_metadata <- site_metadata %>%
+  mutate(Site = factor(Site), Near_Far = factor(Near_Far), Location = factor(Location), loc_abbr = factor(loc_abbr)) %>%
+  mutate(present_absent = ifelse(as.factor(Near_Far) == "NO" | as.factor(Near_Far) == "NOE", "Absent", "Present"))
+
+#Read in taxonomic level metadata and clean
+tax_metadata <- read_excel("../../data/metadata/tax_metadata.xlsx")
+
+tax_metadata <- tax_metadata %>%
+  mutate(kingdom = factor(kingdom),
+         phylum = factor(phylum), 
+         class = factor(class), 
+         order = factor(order), 
+         family = factor(family), 
+         genus = factor(genus), 
+         species = factor(species))
+```
+
+## Read-in raw data
+```{r}
+#Read in OTU raw abundance data. This data is organized as a matrix of individual microbial OTUS (rows) and sampling sites (columns). 
+soil_raw <- read_excel("../../data/excel_data/raw_data.xlsx")
+
+#Clean table
+colnames(soil_raw)[1] <- "otu_id"
+
+soil_raw <- soil_raw %>%
+  mutate(otu_id = as.character(otu_id)) %>%
+  mutate(otu_id = factor(otu_id))
+
+#Summarize raw microbial OTU data
+#Get number of OTUs
+otu_count <- soil_raw %>%
+  nrow() #84,960 OTUs
+
+#Get number of sites
+site_count <- soil_raw %>%
+  ncol() #24 sites (excluding otu id)
+
+read_count <- soil_raw[,-c(1)] %>%
+  colSums() #54,631 reads per sample - THE DATA IS ALREADY RAREFIED!
+
+
+#combine taxonomy data (tax_metadatat) and raw otu data (soil_raw)
+soil_all <- cbind(tax_metadata, soil_raw)
+```
+
+## Get Relative Abundance Data at the Phylum Level in a gathered dataset - this was produced in ORCHIDS_tax_confidence.rmd
+```{r}
+soil_data_phylum_raw <- soil_all[,-c(1,3:7)]
+
+soil_data_phylum_rel <- soil_data_phylum_raw %>%
+  mutate(LT0116S = LT0116S/54631,
+         LT0216S = LT0216S/54631,
+         NE0616S = NE0616S/54631,
+         P0116S = P0116S/54631,
+         P0216S = P0216S/54631,
+         P0316S = P0316S/54631,
+         H0316S = H0316S/54631,
+         H0216S = H0216S/54631,
+         H0116S = H0116S/54631,
+         LT0516S = LT0516S/54631,
+         T0416S = T0416S/54631,
+         NE0216S = NE0216S/54631,
+         NE0416S = NE0416S/54631,
+         S0216S = S0216S/54631,
+         LT0416S = LT0416S/54631,
+         NE0516S = NE0516S/54631,
+         S0116S = S0116S/54631,
+         LT0316S = LT0316S/54631,
+         NE0316S = NE0316S/54631,
+         NE0116S = NE0116S/54631,
+         T0316S = T0316S/54631,
+         NE0816S = NE0816S/54631,
+         NE0716S = NE0716S/54631,
+         T0116S = T0116S/54631)
+
+#Full Dataset with raw and relative abundance data
+soil_data_phylum_top10_raw_abundance_general <- soil_data_phylum_raw %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+  
+soil_data_phylum_top10_relative_abundance_general <- soil_data_phylum_rel %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+```
+
+## Get raw abundance and relative abundance datasets that are ready to use for all analyses
+```{r}
+soil_data_phylum_top10_raw_abundance <- column_to_rownames(soil_data_phylum_top10_raw_abundance_general, "otu_id")
+soil_data_phylum_top10_relative_abundance <- column_to_rownames(soil_data_phylum_top10_relative_abundance_general, "otu_id")
+```
+
+## Get separate datasets without SWALE
+```{r}
+#Datasets with "Far" samples removed
+soil_data_phylum_top10_raw_abundance_noSWALE <- soil_data_phylum_top10_raw_abundance[,-c(15,18)]
+soil_data_phylum_top10_relative_abundance_noSWALE <- soil_data_phylum_top10_relative_abundance[,-c(15,18)]
+```
+
+## Get separate datasets in long (gathered) form for downstream analyses
+```{r}
+soil_data_phylum_top10_raw_abundance_sums <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  group_by(phylum) %>%
+  summarize_all(funs(sum))
+
+soil_data_phylum_top10_rel_abundance_sums <- soil_data_phylum_top10_relative_abundance_noSWALE %>%
+  group_by(phylum) %>%
+  summarize_all(funs(sum))
+
+phy_10_raw_abundance <- soil_data_phylum_top10_raw_abundance_sums %>%
+  gather(LT0116S:T0116S, key = "Site", value = "raw_abundance") %>%
+  left_join(site_metadata, by = "Site")
+
+phy_10_rel_abundance <- soil_data_phylum_top10_rel_abundance_sums %>%
+  gather(LT0116S:T0116S, key = "Site", value = "relative_abundance") %>%
+  left_join(site_metadata, by = "Site")
+```
+
+## Get top 10 phyla in separate datasets
+```{r}
+acidobacteria_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Acidobacteria")
+
+actinobacteria_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Actinobacteria")
+
+bacteroidetes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Bacteroidetes")
+
+chloroflexi_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Chloroflexi")
+
+firmicutes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Firmicutes")
+
+gemmatimonadetes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Gemmatimonadetes")
+
+nitrospirae_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Nitrospirae")
+
+planctomycetes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Planctomycetes")
+
+proteobacteria_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Proteobacteria")
+
+verrucomicrobia_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Verrucomicrobia")
+```
+
+## Run General Linear Mixed Models for each phylum
+```{r}
+##First, I am testing to see whether there is a difference in TOTAL otu abundance between the present/absent treatments
+
+all_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = phy_10_raw_abundance)
+summary(all_pa) # Not significant 
+#Here I am running a separate general linear mixed model (using a negative binomial distribution and Location as a random effect) for each of the top 10 bacterial phyla, excluding all sites from the Swale location.
+
+glmer_acidobacteria_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = acidobacteria_raw_abundance)
+summary(glmer_acidobacteria_pa) #Not significant
+
+glmer_actinobacteria_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = actinobacteria_raw_abundance)
+summary(glmer_actinobacteria_pa) #Not significant
+
+glmer_bacteroidetes_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = bacteroidetes_raw_abundance)
+summary(glmer_bacteroidetes_pa) #Not significant
+
+glmer_chloroflexi_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = chloroflexi_raw_abundance)
+summary(glmer_chloroflexi_pa) #Not significant
+
+glmer_firmicutes_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = firmicutes_raw_abundance)
+summary(glmer_firmicutes_pa) #P = 0.064
+
+glmer_gemmatimonadetes_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = gemmatimonadetes_raw_abundance)
+summary(glmer_gemmatimonadetes_pa) #P = 0.047
+
+glmer_nitrospirae_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = nitrospirae_raw_abundance)
+summary(glmer_nitrospirae_pa) #Not significant
+
+glmer_planctomycetes_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = planctomycetes_raw_abundance)
+summary(glmer_planctomycetes_pa) #Not significant
+
+glmer_proteobacteria_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = proteobacteria_raw_abundance)
+summary(glmer_proteobacteria_pa) #Not significant
+
+glmer_verrucomicrobia_pa <- glmer.nb(raw_abundance ~ present_absent + (1|Near_Far), data = verrucomicrobia_raw_abundance)
+summary(glmer_verrucomicrobia_pa) #Not significant
+
+##None of the phyla showed significant differences between sites where orchids are present or absent. But, I now want to see if there are any major differences at the order level since the presence/absence of an orchid was nearly significant in PERMANOVA 
+```
+
+## Plot the phyla that were significantly different in abundance between the present/absent treatments 
+```{r}
+#Put the firmicutes and gemmatimonadetes dataframes together so that the data can be plotted in a facet grid
+firm_gemma_for_plot <- rbind(firmicutes_raw_abundance, gemmatimonadetes_raw_abundance)
+
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/present_absent_comparison_figures/present_absent_plots.pdf", width = 9, height = 5)
+
+ggplot(firm_gemma_for_plot, aes(x = present_absent, y = raw_abundance)) +
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "grey") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.9, pch = 21, fill = "grey", show.legend = F) +
+  labs(x = "Orchid History", y = "Abundance") +
+  facet_wrap(~phylum) +
+  theme_set(theme_cowplot(12)) +
+  theme(strip.background = element_rect(fill = "white")) +
+  theme(strip.text = element_text(size = 15)) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1, linetype = "solid")) +
+  theme(panel.margin = unit(1, "lines")) +
+  scale_y_continuous(labels=function(x) format(x, big.mark = ",", decimal.mark = ",", scientific = FALSE)) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) + 
+  theme(axis.line = element_blank()) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.ticks.x = element_blank())
+  
+dev.off()
+```

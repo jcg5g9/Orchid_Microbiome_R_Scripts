@@ -1,0 +1,375 @@
+---
+title: "ORCHIDS_NMDS_NO_SWALE"
+author: "Joe Gunn"
+date: "5/21/2020"
+output: html_document
+---
+
+## Libraries needed for analysis
+```{r libraries, echo=FALSE}
+library(readxl)
+library(cowplot)
+library(tidyverse)
+library(vegan)
+library(nlme)
+library(lme4)
+library(factoextra)
+library(viridis)
+library(bbmle)
+library(car)
+library(multcomp)
+library(RColorBrewer)
+library(devtools)
+library(pairwiseAdonis)
+library(EcolUtils)
+```
+
+## Metadata
+```{r}
+#Read in site-level metadata and clean
+site_metadata <- read_excel("../../data/metadata/site_metadata.xlsx")
+
+site_metadata <- site_metadata %>%
+  mutate(Site = factor(Site), Near_Far = factor(Near_Far), Location = factor(Location), loc_abbr = factor(loc_abbr)) %>%
+  mutate(present_absent = ifelse(as.factor(Near_Far) == "NO" | as.factor(Near_Far) == "NOE", "Absent", "Present"))
+
+#Read in taxonomic level metadata and clean
+tax_metadata <- read_excel("../../data/metadata/tax_metadata.xlsx")
+
+tax_metadata <- tax_metadata %>%
+  mutate(kingdom = factor(kingdom),
+         phylum = factor(phylum), 
+         class = factor(class), 
+         order = factor(order), 
+         family = factor(family), 
+         genus = factor(genus), 
+         species = factor(species))
+```
+
+## Read-in raw data
+```{r}
+#Read in OTU raw abundance data. This data is organized as a matrix of individual microbial OTUS (rows) and sampling sites (columns). 
+soil_raw <- read_excel("../../data/excel_data/raw_data.xlsx")
+
+#Clean table
+colnames(soil_raw)[1] <- "otu_id"
+
+soil_raw <- soil_raw %>%
+  mutate(otu_id = as.character(otu_id)) %>%
+  mutate(otu_id = factor(otu_id))
+
+#Summarize raw microbial OTU data
+#Get number of OTUs
+otu_count <- soil_raw %>%
+  nrow() #84,960 OTUs
+
+#Get number of sites
+site_count <- soil_raw %>%
+  ncol() #24 sites (excluding otu id)
+
+read_count <- soil_raw[,-c(1)] %>%
+  colSums() #54,631 reads per sample - THE DATA IS ALREADY RAREFIED!
+
+
+#combine taxonomy data (tax_metadatat) and raw otu data (soil_raw)
+soil_all <- cbind(tax_metadata, soil_raw)
+```
+
+## Get Relative Abundance Data at the Phylum Level in a gathered dataset - this was produced in ORCHIDS_tax_confidence.rmd
+```{r}
+soil_data_phylum_raw <- soil_all[,-c(1,3:7)]
+
+soil_data_phylum_rel <- soil_data_phylum_raw %>%
+  mutate(LT0116S = LT0116S/54631,
+         LT0216S = LT0216S/54631,
+         NE0616S = NE0616S/54631,
+         P0116S = P0116S/54631,
+         P0216S = P0216S/54631,
+         P0316S = P0316S/54631,
+         H0316S = H0316S/54631,
+         H0216S = H0216S/54631,
+         H0116S = H0116S/54631,
+         LT0516S = LT0516S/54631,
+         T0416S = T0416S/54631,
+         NE0216S = NE0216S/54631,
+         NE0416S = NE0416S/54631,
+         S0216S = S0216S/54631,
+         LT0416S = LT0416S/54631,
+         NE0516S = NE0516S/54631,
+         S0116S = S0116S/54631,
+         LT0316S = LT0316S/54631,
+         NE0316S = NE0316S/54631,
+         NE0116S = NE0116S/54631,
+         T0316S = T0316S/54631,
+         NE0816S = NE0816S/54631,
+         NE0716S = NE0716S/54631,
+         T0116S = T0116S/54631)
+
+#Full Dataset with raw and relative abundance data
+soil_data_phylum_top10_raw_abundance_general <- soil_data_phylum_raw %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+  
+soil_data_phylum_top10_relative_abundance_general <- soil_data_phylum_rel %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+```
+
+## Get raw abundance and relative abundance datasets that are ready to use for all analyses
+```{r}
+soil_data_phylum_top10_raw_abundance <- column_to_rownames(soil_data_phylum_top10_raw_abundance_general, "otu_id")
+soil_data_phylum_top10_relative_abundance <- column_to_rownames(soil_data_phylum_top10_relative_abundance_general, "otu_id")
+```
+
+## Get separate datasets without SWALE
+```{r}
+#Datasets with "Far" samples removed
+soil_data_phylum_top10_raw_abundance_noSWALE <- soil_data_phylum_top10_raw_abundance[,-c(15,18)]
+soil_data_phylum_top10_relative_abundance_noSWALE <- soil_data_phylum_top10_relative_abundance[,-c(15,18)]
+```
+
+## Run NMDS on all OTUs together and assess stress
+```{r}
+#Clean the dataset for all OTUs at the phylum leel to prepare data for NMDS
+all_raw_abundance_distance_noSWALE <- soil_data_phylum_top10_raw_abundance_noSWALE[,-c(1)]
+all_raw_abundance_distance_noSWALE <- as.matrix(t(all_raw_abundance_distance_noSWALE))
+
+#Tranform data by total abundance across all sites
+all_transform_noSWALE <- decostand(all_raw_abundance_distance_noSWALE, "total")
+
+#Get distance matrix using Bray-Curtis distance
+all_dist_noSWALE <- vegdist(all_transform_noSWALE, "bray")
+
+#Run NMDS for all OTUs for 1, 2, and 3 dimensions
+all_nmds_noSWALE_1 <- metaMDS(all_dist_noSWALE, k = 1, autotransform = F, expand = F, trace = F)
+all_nmds_noSWALE_2 <- metaMDS(all_dist_noSWALE, k = 2, autotransform = F, expand = F, trace = F)
+all_nmds_noSWALE_3 <- metaMDS(all_dist_noSWALE, k = 3, autotransform = F, expand = F, trace = F)
+
+#Assess stress for each NMDS level
+stress_noSWALE_1 <- all_nmds_noSWALE_1$stress
+stress_noSWALE_2 <- all_nmds_noSWALE_2$stress
+stress_noSWALE_3 <- all_nmds_noSWALE_3$stress
+
+all_k_stress_noSWALE <- data.frame(cbind("k" = c(seq(1:3)), "stress" = c(stress_noSWALE_1, stress_noSWALE_2, stress_noSWALE_3)))
+
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/all_nmds_figures/no_swale/all_otus_nmds_stress_plot_noSWALE.pdf", width = 8, height = 5)
+
+ggplot(all_k_stress_noSWALE, aes(x = k, y = stress)) +
+  geom_point(size = 3) +
+  geom_line() +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Number of NMDS Dimensions", y = "Stress") + 
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 15))
+
+dev.off()
+```
+
+## Build NMDS plots
+```{r}
+#Extract NMDS scores and clean the dataset to plot
+all_scores_noSWALE <- as.data.frame(scores(all_nmds_noSWALE_2))
+
+all_scores_noSWALE <- all_scores_noSWALE %>% 
+  rownames_to_column("Site") %>% 
+  mutate(Site = factor(Site)) %>%
+  left_join(site_metadata, "Site")
+
+#Get centroid values and segment values from score data to make spider plot
+gg_orchids_location_noSWALE <- merge(all_scores_noSWALE, aggregate(cbind(mean.x = NMDS1, mean.y = NMDS2) ~ Location, all_scores_noSWALE, mean), by = "Location")
+gg_orchids_distance_noSWALE <- merge(all_scores_noSWALE, aggregate(cbind(mean.x = NMDS1, mean.y = NMDS2) ~ Near_Far, all_scores_noSWALE, mean), by = "Near_Far")
+gg_orchids_present_absent_noSWALE <- merge(all_scores_noSWALE, aggregate(cbind(mean.x = NMDS1, mean.y = NMDS2) ~ present_absent, all_scores_noSWALE, mean), by = "present_absent")
+
+
+#Make NMDS plot for Location
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/all_nmds_figures/no_swale/all_otus_nmds_location_noSWALE.pdf", width = 8, height = 5)
+
+ggplot(gg_orchids_location_noSWALE, aes(x = NMDS1, y = NMDS2, color = loc_abbr)) +
+  geom_point(aes(color = loc_abbr), size = 3, show.legend = T) +
+  geom_point(aes(x = mean.x, y = mean.y), color = "black", pch = 21, size = 3, show.legend = T) + 
+  geom_segment(aes(x = mean.x, y = mean.y, xend = NMDS1, yend = NMDS2), show.legend = F) +
+  labs(x = "NMDS 1", y = "NMDS 2", color = "Location") + 
+  theme_set(theme_cowplot(12)) +
+  scale_color_manual(values = c("#1B9E77","#D95F02","#7570B3","#E7298A","#E6AB02"))+
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(legend.position = c(0.05,0.2)) +
+  theme(legend.title = element_text(size = 15)) +
+  theme(legend.title = element_text(face = "bold")) + 
+  theme(legend.text = element_text(size = 15)) +
+  theme(legend.background = element_rect(color = "black")) +
+  theme(legend.margin = margin(3,3,3,3))
+
+dev.off()
+
+#Make NMDS plot for Distance from Orchid
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/all_nmds_figures/no_swale/all_otus_nmds_distance_noSWALE.pdf", width = 8, height = 5)
+
+ggplot(gg_orchids_distance_noSWALE, aes(x = NMDS1, y = NMDS2, color = Near_Far)) +
+  geom_point(aes(color = Near_Far), size = 3, show.legend = T) +
+  geom_point(aes(x = mean.x, y = mean.y), color = "black", pch = 21, size = 3, show.legend = T) + 
+  geom_segment(aes(x = mean.x, y = mean.y, xend = NMDS1, yend = NMDS2), show.legend = F) +
+  labs(x = "NMDS 1", y = "NMDS 2", color = "Distance from Orchid") + 
+  theme_set(theme_cowplot(12)) +
+  scale_color_brewer(palette = "Set1") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(legend.position = c(0.05,0.2)) +
+  theme(legend.title = element_text(size = 15)) +
+  theme(legend.title = element_text(face = "bold")) + 
+  theme(legend.text = element_text(size = 15)) +
+  theme(legend.background = element_rect(color = "black")) +
+  theme(legend.margin = margin(3,3,3,3))
+
+dev.off()
+
+#Make NMDS plot for Orchids present or Absent
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/all_nmds_figures/no_swale/all_otus_nmds_present_absent_noSWALE.pdf", width = 8, height = 5)
+
+ggplot(gg_orchids_present_absent_noSWALE, aes(x = NMDS1, y = NMDS2, color = present_absent)) +
+  geom_point(aes(color = present_absent), size = 3, show.legend = T) +
+  geom_point(aes(x = mean.x, y = mean.y), color = "black", pch = 21, size = 3, show.legend = T) + 
+  geom_segment(aes(x = mean.x, y = mean.y, xend = NMDS1, yend = NMDS2), show.legend = F) +
+  labs(x = "NMDS 1", y = "NMDS 2", color = "Orchids") + 
+  theme_set(theme_cowplot(12)) +
+  scale_color_manual(values = c("navyblue", "darkorchid1")) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(legend.position = c(0.05,0.2)) +
+  theme(legend.title = element_text(size = 15)) +
+  theme(legend.title = element_text(face = "bold")) + 
+  theme(legend.text = element_text(size = 15)) +
+  theme(legend.background = element_rect(color = "black")) +
+  theme(legend.margin = margin(3,3,3,3))
+
+dev.off()
+
+##Make plots with object names so that you can put them into a plot_grid
+nmds_location_noswale <- ggplot(gg_orchids_location_noSWALE, aes(x = NMDS1, y = NMDS2, fill = loc_abbr)) +
+  geom_point(aes(x = NMDS1, y = NMDS2, fill = loc_abbr), pch = 21, color = "black", size = 3, show.legend = T) +
+  geom_point(aes(x = mean.x, y = mean.y, fill = loc_abbr), pch = 21, color = "black", size = 3, show.legend = T) + 
+  geom_segment(aes(x = mean.x, y = mean.y, xend = NMDS1, yend = NMDS2, color = loc_abbr), show.legend = F) +
+  labs(x = "NMDS 1", y = "NMDS 2", color = "Location", fill = "Location") + 
+  theme_set(theme_cowplot(12)) +
+  scale_color_manual(values = c("#1B9E77","#D95F02","#7570B3","#E7298A","#E6AB02")) +
+  scale_fill_manual(values = c("#1B9E77","#D95F02","#7570B3","#E7298A","#E6AB02")) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(legend.position = c(0.05,0.2)) +
+  theme(legend.title = element_text(size = 15)) +
+  theme(legend.title = element_text(face = "bold")) + 
+  theme(legend.text = element_text(size = 15)) +
+  theme(legend.background = element_rect(color = "black")) +
+  theme(legend.margin = margin(3,3,3,3))
+
+nmds_distance_noswale <- ggplot(gg_orchids_distance_noSWALE, aes(x = NMDS1, y = NMDS2, color = Near_Far)) +
+  geom_point(aes(x = NMDS1, y = NMDS2, fill = Near_Far), pch = 21, color = "black", size = 3, show.legend = T) +
+  geom_point(aes(x = mean.x, y = mean.y, fill = Near_Far), pch = 21, color = "black", size = 3, show.legend = T) + 
+  geom_segment(aes(x = mean.x, y = mean.y, xend = NMDS1, yend = NMDS2, color = Near_Far), show.legend = F) +
+  labs(x = "NMDS 1", y = "NMDS 2", color = "Distance from Orchid", fill = "Distance from Orchid") + 
+  theme_set(theme_cowplot(12)) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(legend.position = c(0.05,0.2)) +
+  theme(legend.title = element_text(size = 15)) +
+  theme(legend.title = element_text(face = "bold")) + 
+  theme(legend.text = element_text(size = 15)) +
+  theme(legend.background = element_rect(color = "black")) +
+  theme(legend.margin = margin(3,3,3,3)) +
+  theme(axis.title.y = element_blank()) +
+  theme(axis.text.y = element_blank())
+
+nmds_pa_noswale <- ggplot(gg_orchids_present_absent_noSWALE, aes(x = NMDS1, y = NMDS2, fill = present_absent)) +
+  geom_point(aes(x = NMDS1, y = NMDS2, fill = present_absent), pch = 21, color = "black", size = 3, show.legend = T) + 
+  geom_point(aes(x = mean.x, y = mean.y, fill = present_absent),  pch = 21, color = "black", size = 3, show.legend = T) + 
+  geom_segment(aes(x = mean.x, y = mean.y, xend = NMDS1, yend = NMDS2, color = present_absent), show.legend = F) +
+  labs(x = "NMDS 1", y = "NMDS 2", color = "Orchid History", fill = "Orchid History") + 
+  theme_set(theme_cowplot(12)) +
+  scale_fill_manual(values = c("navyblue", "darkorchid1")) +
+  scale_color_manual(values = c("navyblue", "darkorchid1")) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(legend.position = c(0.05,0.14)) +
+  theme(legend.title = element_text(size = 15)) +
+  theme(legend.title = element_text(face = "bold")) + 
+  theme(legend.text = element_text(size = 15)) +
+  theme(legend.background = element_rect(color = "black")) +
+  theme(legend.margin = margin(3,3,3,3)) +
+  theme(axis.title.y = element_blank()) +
+  theme(axis.text.y = element_blank())
+
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/all_nmds_figures/no_swale/all_otus_nmds_plots_noswale.pdf", width = 12, height = 5)
+
+plot_grid(nmds_location_noswale, nmds_pa_noswale, nrow = 1, labels = c("a","b"), label_size = 25, label_y = 1, label_x = 0.02)
+
+dev.off()
+```
+
+## Run PERMANOVA for all locations
+## Get metadata in a format where it can be used with the orchid distance matrix
+```{r}
+##Here I am putting the metadata in the SAME ORDER as the distance matrix prodcued by vegan, because the order of the labels actually does appear to matter!
+soil_meta_gathered_for_nmds_noSWALE <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  gather(LT0116S:T0116S, key = "Site", value = "raw_abundance")
+
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[,c(2,3)]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(1:79587),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(2:79588),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(3:79589),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(4:79590),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(5:79591),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(6:79592),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(7:79593),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(8:79594),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(9:79595),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(10:79596),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(11:79597),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(12:79598),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(13:79599),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(14:79600),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(15:79601),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(16:79602),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(17:79603),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(18:79604),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(19:79605),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(20:79606),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(21:79607),]
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE[-c(22:79608),]
+
+soil_meta_gathered_for_nmds_noSWALE <- as.data.frame(soil_meta_gathered_for_nmds_noSWALE)
+soil_meta_gathered_for_nmds_noSWALE <- soil_meta_gathered_for_nmds_noSWALE %>% rownames_to_column("row")
+soil_meta_gathered_for_nmds_noSWALE <- as.data.frame(soil_meta_gathered_for_nmds_noSWALE[,-c(1,3)])
+colnames(soil_meta_gathered_for_nmds_noSWALE) <- "Site"
+
+soil_metadata_permanova_noSWALE <- soil_meta_gathered_for_nmds_noSWALE %>%
+  left_join(site_metadata, by = "Site")
+```
+
+## Run PERMANOVA
+```{r}
+set.seed(1234)
+
+#Run Permanova for locations
+permanova_all_locations_noSWALE <- adonis(all_dist_noSWALE ~ Location, soil_metadata_permanova_noSWALE, distance = "bray", permutations = 9999) # VERY SIGNIFICANT (p < 0.001)
+
+hist(permanova_all_locations$f.perms)
+
+#Run Permanova for distances from orchids
+permanova_all_distance_noSWALE <- adonis(all_dist_noSWALE ~ Near_Far, soil_metadata_permanova_noSWALE, Strata = Location, distance = "bray", permutations = 9999) # NOT SIGNIFICANT 0.2019
+
+hist(permanova_all_distance$f.perms)
+
+#Run Permanova for present/absent orchids
+permanova_orchids_present_absent_noSWALE <- adonis(all_dist_noSWALE ~ present_absent, soil_metadata_permanova_noSWALE, Strata = Near_Far, distance = "bray", permutations = 9999) # really close to significant 0.059, F = 1.741
+
+hist(permanova_orchids_present_absent$f.perms)
+```
+
+## Get Beta Dispersion
+```{r}
+beta_dispersion_location <- betadisper(all_dist_noSWALE, soil_metadata_permanova_noSWALE$Location, type = "centroid")
+anova(beta_dispersion_location) #Significant p = 0.034, F = 3.347
+
+beta_dispersion_pa <- betadisper(all_dist_noSWALE, soil_metadata_permanova_noSWALE$present_absent, type = "centroid")
+anova(beta_dispersion_pa) #Not significant p = 0.7752, F = 0.084
+```

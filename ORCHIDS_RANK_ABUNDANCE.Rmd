@@ -1,0 +1,464 @@
+---
+title: "ORCHIDS_RANK_ABUNDANCE"
+author: "Joe Gunn"
+date: "5/21/2020"
+output: html_document
+---
+
+## Libraries needed for analysis
+```{r libraries, echo=FALSE}
+library(readxl)
+library(cowplot)
+library(tidyverse)
+library(vegan)
+library(nlme)
+library(lme4)
+library(factoextra)
+library(viridis)
+library(bbmle)
+library(car)
+library(multcomp)
+library(RColorBrewer)
+library(devtools)
+library(pairwiseAdonis)
+library(EcolUtils)
+library(plotly)
+library(BiodiversityR)
+```
+
+## Metadata
+```{r}
+#Read in site-level metadata and clean
+site_metadata <- read_excel("../../data/metadata/site_metadata.xlsx")
+
+site_metadata <- site_metadata %>%
+  mutate(Site = factor(Site), Near_Far = factor(Near_Far), Location = factor(Location), loc_abbr = factor(loc_abbr)) %>%
+  mutate(present_absent = ifelse(as.factor(Near_Far) == "NO" | as.factor(Near_Far) == "NOE", "Absent", "Present"))
+
+#Read in taxonomic level metadata and clean
+tax_metadata <- read_excel("../../data/metadata/tax_metadata.xlsx")
+
+tax_metadata <- tax_metadata %>%
+  mutate(kingdom = factor(kingdom),
+         phylum = factor(phylum), 
+         class = factor(class), 
+         order = factor(order), 
+         family = factor(family), 
+         genus = factor(genus), 
+         species = factor(species))
+```
+
+## Read-in raw data
+```{r}
+#Read in OTU raw abundance data. This data is organized as a matrix of individual microbial OTUS (rows) and sampling sites (columns). 
+soil_raw <- read_excel("../../data/excel_data/raw_data.xlsx")
+
+#Clean table
+colnames(soil_raw)[1] <- "otu_id"
+
+soil_raw <- soil_raw %>%
+  mutate(otu_id = as.character(otu_id)) %>%
+  mutate(otu_id = factor(otu_id))
+
+#Summarize raw microbial OTU data
+#Get number of OTUs
+otu_count <- soil_raw %>%
+  nrow() #84,960 OTUs
+
+#Get number of sites
+site_count <- soil_raw %>%
+  ncol() #24 sites (excluding otu id)
+
+read_count <- soil_raw[,-c(1)] %>%
+  colSums() #54,631 reads per sample - THE DATA IS ALREADY RAREFIED!
+
+
+#combine taxonomy data (tax_metadatat) and raw otu data (soil_raw)
+soil_all <- cbind(tax_metadata, soil_raw)
+```
+
+## Get Relative Abundance Data at the Phylum Level in a gathered dataset - this was produced in ORCHIDS_tax_confidence.rmd
+```{r}
+soil_data_phylum_raw <- soil_all[,-c(1,3:7)]
+
+soil_data_phylum_rel <- soil_data_phylum_raw %>%
+  mutate(LT0116S = LT0116S/54631,
+         LT0216S = LT0216S/54631,
+         NE0616S = NE0616S/54631,
+         P0116S = P0116S/54631,
+         P0216S = P0216S/54631,
+         P0316S = P0316S/54631,
+         H0316S = H0316S/54631,
+         H0216S = H0216S/54631,
+         H0116S = H0116S/54631,
+         LT0516S = LT0516S/54631,
+         T0416S = T0416S/54631,
+         NE0216S = NE0216S/54631,
+         NE0416S = NE0416S/54631,
+         S0216S = S0216S/54631,
+         LT0416S = LT0416S/54631,
+         NE0516S = NE0516S/54631,
+         S0116S = S0116S/54631,
+         LT0316S = LT0316S/54631,
+         NE0316S = NE0316S/54631,
+         NE0116S = NE0116S/54631,
+         T0316S = T0316S/54631,
+         NE0816S = NE0816S/54631,
+         NE0716S = NE0716S/54631,
+         T0116S = T0116S/54631)
+
+#Full Dataset with raw and relative abundance data
+soil_data_phylum_top10_raw_abundance_general <-soil_data_phylum_raw %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+  
+soil_data_phylum_top10_relative_abundance_general <-soil_data_phylum_rel %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+```
+
+## Get raw abundance and relative abundance datasets that are ready to use for all analyses
+```{r}
+soil_data_phylum_top10_raw_abundance <- column_to_rownames(soil_data_phylum_top10_raw_abundance_general, "otu_id")
+soil_data_phylum_top10_relative_abundance <- column_to_rownames(soil_data_phylum_top10_relative_abundance_general, "otu_id")
+```
+
+## Get separate datasets without SWALE
+```{r}
+#Datasets with "Far" samples removed
+soil_data_phylum_top10_raw_abundance_noSWALE <- soil_data_phylum_top10_raw_abundance[,-c(15,18)]
+soil_data_phylum_top10_relative_abundance_noSWALE <- soil_data_phylum_top10_relative_abundance[,-c(15,18)]
+```
+
+## Get metadata for Top 10 phyla only and combine with taxonomy metadata
+```{r}
+tax_metadata_for_top_10_phyla <- soil_all[,-c(9:32)] %>%
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+
+soil_data_phylum_top10_raw_abundance_withTAX <- cbind(tax_metadata_for_top_10_phyla, soil_data_phylum_top10_raw_abundance_general) 
+soil_data_phylum_top10_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_withTAX[,-c(9:10)]
+soil_data_phylum_top10_relative_abundance_withTAX <- cbind(tax_metadata_for_top_10_phyla, soil_data_phylum_top10_relative_abundance_general) 
+soil_data_phylum_top10_relative_abundance_withTAX <- soil_data_phylum_top10_relative_abundance_withTAX[,-c(9:10)]
+```
+
+## Get separate datasets without SWALE
+```{r}
+soil_data_phylum_top10_raw_abundance_noSWALE <- soil_data_phylum_top10_raw_abundance[,-c(15,18)]
+soil_data_phylum_top10_relative_abundance_noSWALE <- soil_data_phylum_top10_relative_abundance[,-c(15,18)]
+
+soil_data_phylum_top10_raw_abundance_noSWALE_withTAX <- cbind(tax_metadata_for_top_10_phyla, soil_data_phylum_top10_raw_abundance_noSWALE) 
+soil_data_phylum_top10_raw_abundance_noSWALE_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX[,-c(8:9)]
+```
+
+## Get top 10 phyla with all other taxonomic data
+```{r}
+#Here I am separating the data into separate phyla, but I am keeping all other taxonomic information as well so that I can eventually extract orders 
+acidobacteria_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Acidobacteria")
+
+actinobacteria_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Actinobacteria")
+
+bacteroidetes_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Bacteroidetes")
+
+chloroflexi_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Chloroflexi")
+
+firmicutes_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Firmicutes")
+
+gemmatimonadetes_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Gemmatimonadetes")
+
+nitrospirae_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Nitrospirae")
+
+planctomycetes_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Planctomycetes")
+
+proteobacteria_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Proteobacteria")
+
+verrucomicrobia_raw_abundance_withTAX <- soil_data_phylum_top10_raw_abundance_noSWALE_withTAX %>%
+  filter(phylum == "Verrucomicrobia")
+```
+
+## Get Order matrices for each of the top 10 phyla
+```{r}
+##acidobacteria
+acidobacteria_raw_abundance_withTAX_orders <- acidobacteria_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+acidobacteria_raw_abundance_withTAX_orders <- acidobacteria_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+acidobacteria_orders_sums <- acidobacteria_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+acidobacteria_orders_sum_inverted <- acidobacteria_orders_sums %>% column_to_rownames("order")
+acidobacteria_orders_sum_inverted <- data.frame(t(acidobacteria_orders_sum_inverted))
+
+##ACTINOBACTERIA
+actinobacteria_raw_abundance_withTAX_orders <- actinobacteria_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+actinobacteria_raw_abundance_withTAX_orders <- actinobacteria_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+actinobacteria_orders_sums <- actinobacteria_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+actinobacteria_orders_sum_inverted <- actinobacteria_orders_sums %>% column_to_rownames("order")
+actinobacteria_orders_sum_inverted <- data.frame(t(actinobacteria_orders_sum_inverted))
+
+##bacteroidetes
+bacteroidetes_raw_abundance_withTAX_orders <- bacteroidetes_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+bacteroidetes_raw_abundance_withTAX_orders <- bacteroidetes_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+bacteroidetes_orders_sums <- bacteroidetes_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+bacteroidetes_orders_sum_inverted <- bacteroidetes_orders_sums %>% column_to_rownames("order")
+bacteroidetes_orders_sum_inverted <- data.frame(t(bacteroidetes_orders_sum_inverted))
+
+##chloroflexi
+chloroflexi_raw_abundance_withTAX_orders <- chloroflexi_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+chloroflexi_raw_abundance_withTAX_orders <- chloroflexi_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+chloroflexi_orders_sums <- chloroflexi_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+chloroflexi_orders_sum_inverted <- chloroflexi_orders_sums %>% column_to_rownames("order")
+chloroflexi_orders_sum_inverted <- data.frame(t(chloroflexi_orders_sum_inverted))
+
+##firmicutes
+firmicutes_raw_abundance_withTAX_orders <- firmicutes_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+firmicutes_raw_abundance_withTAX_orders <- firmicutes_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+firmicutes_orders_sums <- firmicutes_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+firmicutes_orders_sum_inverted <- firmicutes_orders_sums %>% column_to_rownames("order")
+firmicutes_orders_sum_inverted <- data.frame(t(firmicutes_orders_sum_inverted))
+
+##gemmatimonadetes
+gemmatimonadetes_raw_abundance_withTAX_orders <- gemmatimonadetes_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+gemmatimonadetes_raw_abundance_withTAX_orders <- gemmatimonadetes_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+gemmatimonadetes_orders_sums <- gemmatimonadetes_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+gemmatimonadetes_orders_sum_inverted <- gemmatimonadetes_orders_sums %>% column_to_rownames("order")
+gemmatimonadetes_orders_sum_inverted <- data.frame(t(gemmatimonadetes_orders_sum_inverted))
+
+##nitrospirae
+nitrospirae_raw_abundance_withTAX_orders <- nitrospirae_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+nitrospirae_raw_abundance_withTAX_orders <- nitrospirae_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+nitrospirae_orders_sums <- nitrospirae_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+nitrospirae_orders_sum_inverted <- nitrospirae_orders_sums %>% column_to_rownames("order")
+nitrospirae_orders_sum_inverted <- data.frame(t(nitrospirae_orders_sum_inverted))
+
+##planctomycetes
+planctomycetes_raw_abundance_withTAX_orders <- planctomycetes_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+planctomycetes_raw_abundance_withTAX_orders <- planctomycetes_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+planctomycetes_orders_sums <- planctomycetes_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+planctomycetes_orders_sum_inverted <- planctomycetes_orders_sums %>% column_to_rownames("order")
+planctomycetes_orders_sum_inverted <- data.frame(t(planctomycetes_orders_sum_inverted))
+
+##proteobacteria
+proteobacteria_raw_abundance_withTAX_orders <- proteobacteria_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+proteobacteria_raw_abundance_withTAX_orders <- proteobacteria_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+proteobacteria_orders_sums <- proteobacteria_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+proteobacteria_orders_sum_inverted <- proteobacteria_orders_sums %>% column_to_rownames("order")
+proteobacteria_orders_sum_inverted <- data.frame(t(proteobacteria_orders_sum_inverted))
+
+##verrucomicrobia
+verrucomicrobia_raw_abundance_withTAX_orders <- verrucomicrobia_raw_abundance_withTAX[,-c(1:3,5:7)]
+
+#Drop all na values to only analyze OTUs assigned at the order level: 10,629 total OTUs
+verrucomicrobia_raw_abundance_withTAX_orders <- verrucomicrobia_raw_abundance_withTAX_orders %>% drop_na()
+
+#Group by the same orders, and sum within each site
+verrucomicrobia_orders_sums <- verrucomicrobia_raw_abundance_withTAX_orders %>%
+  group_by(order) %>%
+  summarize_all(funs(sum))
+
+#Here I am inverting the dataset so that my y variables are individual orders and my x variables are sites
+verrucomicrobia_orders_sum_inverted <- verrucomicrobia_orders_sums %>% column_to_rownames("order")
+verrucomicrobia_orders_sum_inverted <- data.frame(t(verrucomicrobia_orders_sum_inverted))
+```
+
+## Get datasets for only sites where orchids are present
+```{r}
+acidobacteria_orders_sum_inverted_orchids <- acidobacteria_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+actinobacteria_orders_sum_inverted_orchids <- actinobacteria_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+bacteroidetes_orders_sum_inverted_orchids <- bacteroidetes_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+chloroflexi_orders_sum_inverted_orchids <- chloroflexi_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+firmicutes_orders_sum_inverted_orchids <- firmicutes_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+gemmatimonadetes_orders_sum_inverted_orchids <- gemmatimonadetes_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+nitrospirae_orders_sum_inverted_orchids <- nitrospirae_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+planctomycetes_orders_sum_inverted_orchids <- planctomycetes_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+proteobacteria_orders_sum_inverted_orchids <- proteobacteria_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+verrucomicrobia_orders_sum_inverted_orchids <- verrucomicrobia_orders_sum_inverted %>% 
+  rownames_to_column("Site") %>%
+  left_join(site_metadata, by = "Site") %>%
+  filter(!(present_absent == "Absent")) %>% 
+  column_to_rownames("Site")
+
+acidobacteria_orders_sum_inverted_orchids <- acidobacteria_orders_sum_inverted_orchids[,-c(21:24)]
+actinobacteria_orders_sum_inverted_orchids <- actinobacteria_orders_sum_inverted_orchids[,-c(11:14)]
+bacteroidetes_orders_sum_inverted_orchids <- bacteroidetes_orders_sum_inverted_orchids[,-c(7:10)]
+chloroflexi_orders_sum_inverted_orchids <- chloroflexi_orders_sum_inverted_orchids[,-c(35:38)]
+firmicutes_orders_sum_inverted_orchids <- firmicutes_orders_sum_inverted_orchids[,-c(11:14)]
+gemmatimonadetes_orders_sum_inverted_orchids <- gemmatimonadetes_orders_sum_inverted_orchids[,-c(6:9)]
+nitrospirae_orders_sum_inverted_orchids <- data.frame(nitrospirae_orders_sum_inverted_orchids[,-c(2:5)])
+planctomycetes_orders_sum_inverted_orchids <- planctomycetes_orders_sum_inverted_orchids[,-c(25:28)]
+proteobacteria_orders_sum_inverted_orchids <- proteobacteria_orders_sum_inverted_orchids[,-c(68:71)]
+verrucomicrobia_orders_sum_inverted_orchids <- verrucomicrobia_orders_sum_inverted_orchids[,-c(12:15)]
+```
+
+## Get Order Rank Abundance for each of the top 10 phyla
+```{r}
+#Get rannkabundance tables for each phylum that was significant in alpha diversity
+rank_acido <- data.frame(rankabundance(acidobacteria_orders_sum_inverted_orchids))
+rank_actino <- data.frame(rankabundance(actinobacteria_orders_sum_inverted_orchids))
+rank_gemma <- data.frame(rankabundance(gemmatimonadetes_orders_sum_inverted_orchids))
+rank_plancto <- data.frame(rankabundance(planctomycetes_orders_sum_inverted_orchids))
+rank_proteo <- data.frame(rankabundance(proteobacteria_orders_sum_inverted_orchids))
+rank_verruco <- data.frame(rankabundance(verrucomicrobia_orders_sum_inverted_orchids))
+
+#Edit each table 
+rank_acido_ready <- cbind(rank_acido, "phylum" = c(rep("Acidobacteria", times = nrow(rank_acido)))) %>% 
+  rownames_to_column("Order")
+rank_actino_ready <- cbind(rank_actino, "phylum" = c(rep("Actinobacteria", times = nrow(rank_actino)))) %>%
+  rownames_to_column("Order")
+rank_gemma_ready <- cbind(rank_gemma, "phylum" = c(rep("Gemmatimonadetes", times = nrow(rank_gemma)))) %>% 
+  rownames_to_column("Order")
+rank_plancto_ready <- cbind(rank_plancto, "phylum" = c(rep("Planctomycetes", times = nrow(rank_plancto)))) %>%
+  rownames_to_column("Order")
+rank_proteo_ready <- cbind(rank_proteo, "phylum" = c(rep("Proteobacteria", times = nrow(rank_proteo)))) %>%
+  rownames_to_column("Order")
+rank_verruco_ready <- cbind(rank_verruco, "phylum" = c(rep("Verrucomicrobia", times = nrow(rank_verruco)))) %>%
+  rownames_to_column("Order")
+
+rank_all_phyla <- rbind(rank_acido_ready, rank_actino_ready, rank_gemma_ready, rank_plancto_ready, rank_proteo_ready, rank_verruco_ready)
+
+rank_all_phyla_alpha_significant_no_outliers <- rank_all_phyla[-c(60,127),]
+
+##GEt rid of row 60: Proteobacteria, Rhizobiales
+##GEt rid of row 127: Verrucomicrobia, Chthoniobacterales
+
+
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/rank_abundance_figures/rank_plots.pdf", width = 8, height = 5)
+
+ggplot(rank_all_phyla, aes(x = rank, y = proportion, fill = phylum)) +
+  geom_line(aes(color = phylum)) +
+  geom_point(size = 3, pch = 21, color = "black") +
+  xlim(0, 20) +
+  labs(x = "Rank", y = "Abundance", color = "Phylum", fill = "Phylum") +
+  theme_set(theme_cowplot(12)) +
+  scale_color_manual(values = c("#440154FF","#482878FF","#1F9E89FF","#6DCD59FF","#B4DE2CFF", "#FDE725FF")) +
+  scale_fill_manual(values = c("#440154FF","#482878FF","#1F9E89FF","#6DCD59FF","#B4DE2CFF", "#FDE725FF")) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(legend.background = element_rect(linetype = "solid", color = "black")) +
+  theme(legend.margin = margin(3,3,3,3)) +
+  theme(legend.title = element_text(size = 15, face = "bold")) +
+  theme(legend.text = element_text(size = 15)) +
+  theme(legend.position = c(0.6,0.7)) +
+  scale_y_continuous(labels = function(x) format(x, big.mark = ",", decimal.mark = ",", scientific = FALSE))
+
+dev.off()
+```

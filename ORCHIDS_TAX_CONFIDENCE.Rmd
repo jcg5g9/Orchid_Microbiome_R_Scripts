@@ -1,0 +1,276 @@
+---
+title: "ORCHIDS_TAX_CONFIDENCE"
+author: "Joe Gunn"
+date: "5/20/2020"
+output: html_document
+---
+# ORCHIDS - TAXONOMIC ANALYSIS
+
+Purpose: Here, my primary goal is to summarize the full community dataset by determining the total number of OTUs, the total number of rarefied sequence reads per site, the total number of rarefied reads across the entire dataset, and the total number of phyla. My first analysis determines the proportion of all OTUs that are classified taxonomically to each taxonomic level (kingdom, phylum, class, order, family, genus, species). This analysis allows us to determine the approximately confidence with which each taxonomic level can be analyzed. I also aim to determine the top 10 phyla in the dataset (the 10 phyla with the highest abundance across the whole dataset). To do this, I calculate the relative abundance of each phylum by totalling the number of reads across all sites for each phylum and dividing by the total number of reads in the whole dataset. I arrange the phyla in order from greatest to lowest relative abundance and only select the top 10 most abundant phyla.
+
+INFO FOR FULL DATASET:
+
+Total Number of Sites: 24
+Rarefied Reads per Site: 54,631
+Total Rarefied Reads in the dataset [54,631 X 24]: 1,311,144
+Total OTUs: 84,960
+    Total Phyla: 61
+    
+INFO FOR TOP TEN PHYLA: 
+
+Total Number of Sites: 24
+Rarefied Reads per Site: average number 53324.5 (97.61 % of total)
+Total Rarefied Reads in the dataset [sum of reads across sites]: 1,279,788 (97.61 % of total)
+Total OTUs: 79,588 (93.68 % of the total)
+
+## Libraries needed for analysis
+```{r libraries, echo=FALSE}
+library(readxl)
+library(cowplot)
+library(tidyverse)
+library(vegan)
+library(nlme)
+library(lme4)
+library(factoextra)
+library(viridis)
+library(bbmle)
+library(car)
+```
+
+## Metadata
+```{r}
+#Read in site-level metadata and clean
+site_metadata <- read_excel("../../data/metadata/site_metadata.xlsx")
+
+site_metadata <- site_metadata %>%
+  mutate(Site = factor(Site), Near_Far = factor(Near_Far), Location = factor(Location), loc_abbr = factor(loc_abbr)) %>%
+  mutate(present_absent = ifelse(as.factor(Near_Far) == "NO" | as.factor(Near_Far) == "NOE", "Absent", "Present"))
+
+#Read in taxonomic level metadata and clean
+tax_metadata <- read_excel("../../data/metadata/tax_metadata.xlsx")
+
+tax_metadata <- tax_metadata %>%
+  mutate(kingdom = factor(kingdom),
+         phylum = factor(phylum), 
+         class = factor(class), 
+         order = factor(order), 
+         family = factor(family), 
+         genus = factor(genus), 
+         species = factor(species))
+```
+
+## Read-in raw data
+```{r}
+#Read in OTU raw abundance data. This data is organized as a matrix of individual microbial OTUS (rows) and sampling sites (columns). 
+soil_raw <- read_excel("../../data/excel_data/raw_data.xlsx")
+
+#Clean table
+colnames(soil_raw)[1] <- "otu_id"
+
+soil_raw <- soil_raw %>%
+  mutate(otu_id = as.character(otu_id)) %>%
+  mutate(otu_id = factor(otu_id))
+
+#Summarize raw microbial OTU data
+#Get number of OTUs
+otu_count <- soil_raw %>%
+  nrow() #84,960 OTUs
+
+#Get number of sites
+site_count <- soil_raw %>%
+  ncol() #24 sites (excluding otu id)
+
+read_count <- soil_raw[,-c(1)] %>%
+  colSums() #54,631 reads per sample - THE DATA IS ALREADY RAREFIED!
+
+
+#combine taxonomy data (tax_metadatat) and raw otu data (soil_raw)
+soil_all <- cbind(tax_metadata, soil_raw)
+```
+
+## Summarize taxonomy data
+### For these analyses, I am only using the tax_metadata dataset, which only contains the taxonomic groups to which each individual OTU belongs (based on built in alignment tools in the QIIME pipeline). 
+## Determine taxonomic level to use for individual analyses - which taxonomic level will be used to compare abundance among or within sites/among distances
+```{r}
+#change all unclassified taxa that aren't already called "NA" to "NA"
+tax_metadata$species[tax_metadata$species == "s__"] <- NA
+tax_metadata$genus[tax_metadata$genus == "g__"] <- NA
+tax_metadata$family[tax_metadata$family == "f__"] <- NA
+tax_metadata$order[tax_metadata$order == "o__"] <- NA
+tax_metadata$class[tax_metadata$class == "c__"] <- NA
+tax_metadata$phylum[tax_metadata$phylum == "p__"] <- NA
+tax_metadata$kingdom[tax_metadata$kingdom == "k__"] <- NA
+
+##Create data frames for ONLY the individual OTUs that were successfully classified at each level. Kingdom had many individual OTUs successfully classified, while Species had substantially fewer OTUs successfully classified
+known_species <- as.data.frame(tax_metadata[complete.cases(tax_metadata$species),]) #species
+known_genus <-  as.data.frame(tax_metadata[complete.cases(tax_metadata$genus),]) #genus
+known_family <- as.data.frame(tax_metadata[complete.cases(tax_metadata$family),]) #family
+known_order <- as.data.frame(tax_metadata[complete.cases(tax_metadata$order),]) #order 
+known_class <- as.data.frame(tax_metadata[complete.cases(tax_metadata$class),]) #class 
+known_phylum <- as.data.frame(tax_metadata[complete.cases(tax_metadata$phylum),]) #phylum
+known_kingdom <- as.data.frame(tax_metadata[complete.cases(tax_metadata$kingdom),]) #kingdom
+
+#Get data
+nrow(known_species) # 1145 OTUs
+nrow(known_genus) # 17,654 OTUs
+nrow(known_family) # 50,804 OTUs
+nrow(known_order) # 76,160 OTUs
+nrow(known_class) # 84,002 OTUs
+nrow(known_phylum) # 84,906 OTUs
+nrow(known_kingdom) # 84,960
+
+#Create data frame with number of successfully classified OTUs for each taxonomic level
+tax_classified <- data.frame(cbind("otu_classified" = as.numeric(c(nrow(known_species), nrow(known_genus), nrow(known_family), nrow(known_order), nrow(known_class), nrow(known_phylum), nrow(known_kingdom)))), "tax" = as.factor(c("species","genus","family","order","class","phylum","kingdom")))
+
+tax_classified$tax <- factor(tax_classified$tax, levels = c("kingdom", "phylum", "class", "order", "family", "genus", "species")) #reorder levels - otherwise it will automatically list aplphabetically
+
+#Graph the number of successfully classified OTUs per taxonomic group
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/tax_confidence_figures/tax_assigned.pdf", width = 9, height = 6)
+
+ggplot(tax_classified, aes(x = tax, y = otu_classified)) +
+  geom_bar(stat = "identity", position = position_dodge(), fill = "grey", color = "black") +
+  geom_text(aes(label = paste(format(round(((otu_classified/84960)*100), digits = 2), nsmall =2),"%"), vjust = -0.9, hjust = 0.5, size = 4), show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  scale_y_continuous(labels=function(x) format(x, big.mark = ",", decimal.mark = ",", scientific = FALSE)) +
+  labs(x = "Taxonomic Level", y = "Number of Classified OTUs") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.title.x = element_blank())
+  
+dev.off()
+```
+
+## Get proportions of each taxonomic group
+###54631*24 = 1,311,144 total reads across the whole dataset
+## Get total relative for the WHOLE DATASET - this is for all reads across all sites
+```{r}
+###Explanation###
+##Here I am attempting to calculate the relative abundance of each kingdom, phylum, and order across the entire dataset. To do this, for each individual OTU, I am summing the number of reads (abundance) across all 24 sites and dividing each individual read count by the total count across the entire dataset (54,631 X 24). Then I am grouping all OTUs together by taxonomic group (kingdom, phylum, order)
+#################
+
+#Summarize the proportion of each kingdom across ALL samples
+
+#Get sums across all samples (N = 24) for each individual OTU (84,960)
+soil_otu_sums <- data.frame("otu_sum" = rowSums(soil_raw[,-c(1)]))
+
+#Combine OTU sums data set (above) with taxonomy level metadata
+tax_sums <- cbind(tax_metadata, soil_otu_sums)
+
+#KINGDOM LEVEL PROPORTIONS
+unique(tax_sums$kingdom) #Kingdoms present: Baceteria, Archaea
+
+#Proportion of Bacteria
+bacteria_proportion <- tax_sums %>%
+  filter(kingdom == "Bacteria") %>%
+  summarize(sum_bacteria = sum(otu_sum))
+
+#1304844 bacterial reads/1311144 total reads= 0.9952 = 99.52 % of reads were bacterial reads across the whole dataset 
+
+#Proportion of Archaea
+archaea_proportion <- tax_sums %>%
+  filter(kingdom == "Archaea") %>%
+  summarize(sum_archaea = sum(otu_sum))
+
+#6300 archaea reads/1311144 total reads = 0.004805 = 0.48 % of reads were archael reads across the whole dataset 
+```
+
+## Get total relative for Phyla - this is for all reads across all sites
+```{r}
+
+#PHYLUM LEVEL PROPORTIONS - first, I am calculating the total abundance of each phylum (by summing across all sites and across all OTUs within a phylum) across the entire dataset. I am then calculating relative abundance of each phylum and plotting the total relative abundance (for the whole dataset, based on sums), for the top 10 most abundant phyla. Then, I am calculating the relative abundance of each of the top 10 most abundant phyla per OTU (so I am getting multiple points for each of the phyla.)
+
+#####SUMS FOR EACH PHYLUM######
+unique(tax_sums$phylum) #61 different phyla present
+
+#Get the sum of reads for each phylum (total abundance across the whole dataset), and put them in descending order by sum
+phylum_sums <- tax_sums %>%
+  group_by(phylum) %>%
+  summarize(phy_sum = sum(otu_sum)) %>%
+  arrange(desc(phy_sum))
+
+options(scipen = 999)
+#Add relative abundance to the dataset
+phylum_sums <- phylum_sums %>%
+  mutate(phy_rel_abundance = phy_sum/1311144) #after this calculation, the 11th most abundant phylum was WS3, accounting for 0.67% of reads in the dataset
+
+#Get a separate dataset with only the top 10 phyla (take the first 10 rows from the phlyum_sums dataset)
+phlum_sums_10_highest_abundance <- phylum_sums[c(1:10),]
+
+phlum_sums_10_highest_abundance$phylum <- factor(phlum_sums_10_highest_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+
+#Make a bar plot of the 10 most abundant phyla, showing total relative abundance across all reads
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/tax_confidence_figures/top10_phyla_total_relative_abundance.pdf", width = 9, height = 6)
+
+ggplot(phlum_sums_10_highest_abundance, aes(x = phylum, y = phy_rel_abundance)) +
+  geom_bar(stat = "identity", position = position_dodge(), show.legend = F, fill = "grey", color = "black") +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Total Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank())
+
+dev.off()
+```
+
+## 79,588 otus left after ONLY TOP 10 PHYLA WERE KEPT FOR ANALYSIS
+## Calculate the total number of reads and average reads per site left after removal of non-top-10 phyla 
+```{r}
+#Get the total and average number of reads remaining after removal of the top 10 phyla
+soil_data_phylum_top10_raw_sums <- soil_data_phylum_top10_raw_abundance[,-c(1)] %>%
+  colSums() %>%
+  as.data.frame()
+
+soil_data_phylum_top10_raw_sums <- soil_data_phylum_top10_raw_sums %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+
+colnames(soil_data_phylum_top10_raw_sums) <- c("Site","reads")
+
+#Get total reads
+sum(soil_data_phylum_top10_raw_sums$reads) #1,279,788
+mean(soil_data_phylum_top10_raw_sums$reads) #53324.5
+```
+
+## Get relative abundance across different sites
+```{r}
+soil_data_phylum_top10_rel <- soil_data_phylum_rel %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+
+soil_data_phylum_top10_rel_sums <- soil_data_phylum_top10_rel[,-c(2)] %>%
+  group_by(phylum) %>%
+  summarize_all(funs(sum))
+
+soil_data_phylum_top10_rel_sums_gather <- soil_data_phylum_top10_rel_sums %>%
+  gather(LT0116S:T0116S, key = "Site", value = "relative_abundance")
+
+soil_data_phylum_top10_rel_sums_gather$phylum <- factor(soil_data_phylum_top10_rel_sums_gather$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+
+#Plot boxplot (with points) showing relative abundance of top 10 most abundant phyla across sites (each site is a point within a boxplot. Veruccomicrobia is the most abundant phla across the board, and the rest are shown in order of abundance)
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/tax_confidence_figures/top10_site_relative_abundance.pdf", width = 9, height = 6)
+
+ggplot(soil_data_phylum_top10_rel_sums_gather, aes(x = phylum, y = relative_abundance)) +
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "grey") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.9, pch = 21, fill = "grey", show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank())
+
+dev.off()
+```
+
+## Get averages for each phylum
+```{r}
+phy_top10_relative_abundance_means <- soil_data_phylum_top10_rel_sums_gather %>%
+  group_by(phylum) %>%
+  summarize(mean_rel_abun = mean(relative_abundance))
+
+#means: 
+phy_top10_relative_abundance_means$mean_rel_abun
+```

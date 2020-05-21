@@ -1,0 +1,753 @@
+---
+title: "ORCHIDS_UNUSED"
+author: "Joe Gunn"
+date: "4/17/2020"
+output: html_document
+---
+
+## Test for significant differences at the Phylum Level between locations and between distances for each of the 10 most abundant phyla using NMDS 
+### all analyses were conducted in the package vegan using NMDS methods
+```{r}
+###All datasets below are for individual phyla (top 10) and show raw abundance data
+acidobacteria_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Acidobacteria") 
+
+acidobacteria_raw_abundance_distance <- acidobacteria_raw_abundance_distance[,-c(1)]
+acidobacteria_raw_abundance_distance <- column_to_rownames(acidobacteria_raw_abundance_distance, "otu_id")
+acidobacteria_raw_abundance_distance <- as.matrix(t(acidobacteria_raw_abundance_distance))
+
+actinobacteria_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Actinobacteria")
+
+actinobacteria_raw_abundance_distance <- actinobacteria_raw_abundance_distance[,-c(1)]
+actinobacteria_raw_abundance_distance <- column_to_rownames(actinobacteria_raw_abundance_distance, "otu_id")
+actinobacteria_raw_abundance_distance <- as.matrix(t(actinobacteria_raw_abundance_distance))
+
+bacteroidetes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Bacteroidetes")
+
+bacteroidetes_raw_abundance_distance <- bacteroidetes_raw_abundance_distance[,-c(1)]
+bacteroidetes_raw_abundance_distance <- column_to_rownames(bacteroidetes_raw_abundance_distance, "otu_id")
+bacteroidetes_raw_abundance_distance <- as.matrix(t(bacteroidetes_raw_abundance_distance))
+
+chloroflexi_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Chloroflexi")
+
+chloroflexi_raw_abundance_distance <- chloroflexi_raw_abundance_distance[,-c(1)]
+chloroflexi_raw_abundance_distance <- column_to_rownames(chloroflexi_raw_abundance_distance, "otu_id")
+chloroflexi_raw_abundance_distance <- as.matrix(t(chloroflexi_raw_abundance_distance))
+
+firmicutes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Firmicutes")
+
+firmicutes_raw_abundance_distance <- firmicutes_raw_abundance_distance[,-c(1)]
+firmicutes_raw_abundance_distance <- column_to_rownames(firmicutes_raw_abundance_distance, "otu_id")
+firmicutes_raw_abundance_distance <- as.matrix(t(firmicutes_raw_abundance_distance))
+
+gemmatimonadetes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Gemmatimonadetes")
+
+gemmatimonadetes_raw_abundance_distance <- gemmatimonadetes_raw_abundance_distance[,-c(1)]
+gemmatimonadetes_raw_abundance_distance <- column_to_rownames(gemmatimonadetes_raw_abundance_distance, "otu_id")
+gemmatimonadetes_raw_abundance_distance <- as.matrix(t(gemmatimonadetes_raw_abundance_distance))
+
+nitrospirae_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Nitrospirae")
+
+nitrospirae_raw_abundance_distance <- nitrospirae_raw_abundance_distance[,-c(1)]
+nitrospirae_raw_abundance_distance <- column_to_rownames(nitrospirae_raw_abundance_distance, "otu_id")
+nitrospirae_raw_abundance_distance <- as.matrix(t(nitrospirae_raw_abundance_distance))
+
+planctomycetes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Planctomycetes")
+
+planctomycetes_raw_abundance_distance <- planctomycetes_raw_abundance_distance[,-c(1)]
+planctomycetes_raw_abundance_distance <- column_to_rownames(planctomycetes_raw_abundance_distance, "otu_id")
+planctomycetes_raw_abundance_distance <- as.matrix(t(planctomycetes_raw_abundance_distance))
+
+proteobacteria_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Proteobacteria")
+
+proteobacteria_raw_abundance_distance <- proteobacteria_raw_abundance_distance[,-c(1)]
+proteobacteria_raw_abundance_distance <- column_to_rownames(proteobacteria_raw_abundance_distance, "otu_id")
+proteobacteria_raw_abundance_distance <- as.matrix(t(proteobacteria_raw_abundance_distance))
+
+verrucomicrobia_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_general %>%
+  filter(phylum == "Verrucomicrobia")
+
+verrucomicrobia_raw_abundance_distance <- verrucomicrobia_raw_abundance_distance[,-c(1)]
+verrucomicrobia_raw_abundance_distance <- column_to_rownames(verrucomicrobia_raw_abundance_distance, "otu_id")
+verrucomicrobia_raw_abundance_distance <- as.matrix(t(verrucomicrobia_raw_abundance_distance))
+```
+
+## Transform raw abundance data by total abundance per site, and then produce the distacne matrix for each phylum
+```{r}
+#Transform the data so that each raw abundance value is corrected for the total abundance of each site
+acidobacteria_dist_transform <- decostand(acidobacteria_raw_abundance_distance, "total")
+actinobacteria_dist_transform <- decostand(actinobacteria_raw_abundance_distance, "total")
+bacteroidetes_dist_transform <- decostand(bacteroidetes_raw_abundance_distance, "total")
+chloroflexi_dist_transform <- decostand(chloroflexi_raw_abundance_distance, "total")
+firmicutes_dist_transform <- decostand(firmicutes_raw_abundance_distance, "total")
+gemmatimonadetes_dist_transform <- decostand(gemmatimonadetes_raw_abundance_distance, "total")
+nitrospirae_dist_transform <- decostand(nitrospirae_raw_abundance_distance, "total")
+planctomycetes_dist_transform <- decostand(planctomycetes_raw_abundance_distance, "total")
+proteobacteria_dist_transform <- decostand(proteobacteria_raw_abundance_distance, "total")
+verrucomicrobia_dist_transform <- decostand(verrucomicrobia_raw_abundance_distance, "total")
+
+#Create distance matrix for each phylum using Bray-Curtis distance
+acidobacteria_dist <- vegdist(acidobacteria_dist_transform, "bray")
+actinobacteria_dist <- vegdist(actinobacteria_dist_transform, "bray")
+bacteroidetes_dist <- vegdist(bacteroidetes_dist_transform, "bray")
+chloroflexi_dist <- vegdist(chloroflexi_dist_transform, "bray")
+firmicutes_dist <- vegdist(firmicutes_dist_transform, "bray")
+gemmatimonadetes_dist <- vegdist(gemmatimonadetes_dist_transform, "bray")
+nitrospirae_dist<- vegdist(nitrospirae_dist_transform, "bray")
+planctomycetes_dist <- vegdist(planctomycetes_dist_transform, "bray")
+proteobacteria_dist <- vegdist(proteobacteria_dist_transform, "bray")
+verrucomicrobia_dist <- vegdist(verrucomicrobia_dist_transform, "bray")
+```
+
+## Run NMDS Models
+```{r}
+#Run NMDS on all phyla
+acidobacteria_nmds <- metaMDS(acidobacteria_dist, autotransform = F, expand = F, trace = F)
+actinobacteria_nmds <- metaMDS(actinobacteria_dist, autotransform = F, expand = F, trace = F)
+bacteroidetes_nmds <- metaMDS(bacteroidetes_dist, autotransform = F, expand = F, trace = F)
+chloroflexi_nmds <- metaMDS(chloroflexi_dist, autotransform = F, expand = F, trace = F)
+firmicutes_nmds <- metaMDS(firmicutes_dist, autotransform = F, expand = F, trace = F)
+gemmatimonadetes_nmds <- metaMDS(gemmatimonadetes_dist, autotransform = F, expand = F, trace = F)
+nitrospirae_nmds <- metaMDS(nitrospirae_dist, autotransform = F, expand = F, trace = F)
+planctomycetes_nmds <- metaMDS(planctomycetes_dist, autotransform = F, expand = F, trace = F)
+proteobacteria_nmds <- metaMDS(proteobacteria_dist, autotransform = F, expand = F, trace = F)
+verrucomicrobia_nmds <- metaMDS(verrucomicrobia_dist, autotransform = F, expand = F, trace = F)
+```
+
+## Extract NMDS axes and covert into usable tables for plotting
+```{R}
+#Extract "NMDS Axes" for plotting
+acidobacteria_scores <- as.data.frame(scores(acidobacteria_nmds))
+actinobacteria_scores <- as.data.frame(scores(actinobacteria_nmds))
+bacteroidetes_scores <- as.data.frame(scores(bacteroidetes_nmds))
+chloroflexi_scores <- as.data.frame(scores(chloroflexi_nmds))
+firmicutes_scores <- as.data.frame(scores(firmicutes_nmds))
+gemmatimonadetes_scores <- as.data.frame(scores(gemmatimonadetes_nmds))
+nitrospirae_scores <- as.data.frame(scores(nitrospirae_nmds))
+planctomycetes_scores <- as.data.frame(scores(planctomycetes_nmds))
+proteobacteria_scores <- as.data.frame(scores(proteobacteria_nmds))
+verrucomicrobia_scores <- as.data.frame(scores(verrucomicrobia_nmds))
+
+#Turn Site into a viable column so it can be merged with the metadata
+acidobacteria_scores <- acidobacteria_scores %>% rownames_to_column("Site")
+actinobacteria_scores <- actinobacteria_scores %>% rownames_to_column("Site")
+bacteroidetes_scores <- bacteroidetes_scores %>% rownames_to_column("Site")
+chloroflexi_scores <- chloroflexi_scores %>% rownames_to_column("Site")
+firmicutes_scores <- firmicutes_scores %>% rownames_to_column("Site")
+gemmatimonadetes_scores <- gemmatimonadetes_scores %>% rownames_to_column("Site")
+nitrospirae_scores <- nitrospirae_scores %>% rownames_to_column("Site")
+planctomycetes_scores <- planctomycetes_scores %>% rownames_to_column("Site")
+proteobacteria_scores <- proteobacteria_scores %>% rownames_to_column("Site")
+verrucomicrobia_scores <- verrucomicrobia_scores %>% rownames_to_column("Site")
+
+#Merge each score dataset with metadata
+acidobacteria_scores <- acidobacteria_scores %>% left_join(site_metadata, "Site")
+actinobacteria_scores <- actinobacteria_scores %>% left_join(site_metadata, "Site")
+bacteroidetes_scores <- bacteroidetes_scores %>% left_join(site_metadata, "Site")
+chloroflexi_scores <- chloroflexi_scores %>% left_join(site_metadata, "Site")
+firmicutes_scores <- firmicutes_scores %>% left_join(site_metadata, "Site")
+gemmatimonadetes_scores <- gemmatimonadetes_scores %>% left_join(site_metadata, "Site")
+nitrospirae_scores <- nitrospirae_scores %>% left_join(site_metadata, "Site")
+planctomycetes_scores <- planctomycetes_scores %>% left_join(site_metadata, "Site")
+proteobacteria_scores <- proteobacteria_scores %>% left_join(site_metadata, "Site")
+verrucomicrobia_scores <- verrucomicrobia_scores %>% left_join(site_metadata, "Site")
+
+#Merge each score dataset with metadata
+acidobacteria_scores <- acidobacteria_scores %>% mutate(Site = factor(Site))
+actinobacteria_scores <- actinobacteria_scores %>% mutate(Site = factor(Site))
+bacteroidetes_scores <- bacteroidetes_scores %>% mutate(Site = factor(Site))
+chloroflexi_scores <- chloroflexi_scores %>% mutate(Site = factor(Site))
+firmicutes_scores <- firmicutes_scores %>% mutate(Site = factor(Site))
+gemmatimonadetes_scores <- gemmatimonadetes_scores %>% mutate(Site = factor(Site))
+nitrospirae_scores <- nitrospirae_scores %>% mutate(Site = factor(Site))
+planctomycetes_scores <- planctomycetes_scores %>% mutate(Site = factor(Site))
+proteobacteria_scores <- proteobacteria_scores %>% mutate(Site = factor(Site))
+verrucomicrobia_scores <- verrucomicrobia_scores %>% mutate(Site = factor(Site))
+```
+
+## Plot NMDS 
+```{r}
+ggplot(acidobacteria_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(actinobacteria_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(bacteroidetes_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(chloroflexi_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(firmicutes_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(gemmatimonadetes_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(nitrospirae_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(planctomycetes_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(proteobacteria_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+
+ggplot(verrucomicrobia_scores, aes(x = NMDS1, y = NMDS2, color = Location)) +
+  geom_point()
+```
+
+
+## Get separate datasets for each phylum based on raw data
+```{r}
+###All datasets below are for individual phyla (top 10) and show raw abundance data
+acidobacteria_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Acidobacteria")
+
+actinobacteria_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Actinobacteria")
+
+bacteroidetes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Bacteroidetes")
+
+chloroflexi_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Chloroflexi")
+
+firmicutes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Firmicutes")
+
+gemmatimonadetes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Gemmatimonadetes")
+
+nitrospirae_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Nitrospirae")
+
+planctomycetes_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Planctomycetes")
+
+proteobacteria_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Proteobacteria")
+
+verrucomicrobia_raw_abundance <- phy_10_raw_abundance %>%
+  filter(phylum == "Verrucomicrobia")
+```
+
+
+
+## Visualize and run general linear mixed effect models (with location as a random effect in each model) for each phylum to assess differences among different orchid LOCATION treatments
+
+## ACIDOBACTERIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(acidobacteria_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+acidobacteria_glmer <- glmer.nb(raw_abundance ~ Location + (1|Near_Far), data = acidobacteria_raw_abundance)
+```
+
+## ACTINOBACTERIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(actinobacteria_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+actinobacteria_glmer <- glmer.nb(raw_abundance ~ Location + (1|Near_Far), data = actinobacteria_raw_abundance)
+```
+
+## BACTEROIDETES
+```{r}
+#Plot raw abundance at different distances
+ggplot(bacteroidetes_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+bacteroidetes_glmer <- glmer.nb(raw_abundance ~ Location + (1|Near_Far), data = bacteroidetes_raw_abundance)
+```
+
+## CHLOROFLEXI
+```{r}
+#Plot raw abundance at different distances
+ggplot(chloroflexi_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+chloroflexi_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = chloroflexi_raw_abundance)
+```
+
+## FIRMICUTES
+```{r}
+#Plot raw abundance at different distances
+ggplot(firmicutes_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+firmicutes_glmer <- glmer.nb(raw_abundance ~ Location + (1|Near_Far), data = firmicutes_raw_abundance)
+```
+
+## GEMMATIMONADETES
+```{r}
+#Plot raw abundance at different distances
+ggplot(gemmatimonadetes_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+gemmatimonadetes_glmer <- glmer.nb(raw_abundance ~ Location + (1|Near_Far), data = gemmatimonadetes_raw_abundance)
+```
+
+## NITROSPIRAE
+```{r}
+#Plot raw abundance at different distances
+ggplot(nitrospirae_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+nitrospirae_glmer <- glmer.nb(raw_abundance ~ Location + (1|Near_Far), data = nitrospirae_raw_abundance)
+```
+
+## PLANCTOMYCETES
+```{r}
+#Plot raw abundance at different distances
+ggplot(planctomycetes_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+planctomycetes_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = planctomycetes_raw_abundance)
+```
+
+## PROTEOBACTERIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(proteobacteria_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+proteobacteria_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = proteobacteria_raw_abundance)
+```
+
+## VERRUCOMICROBIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(verrucomicrobia_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+verruco_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = verrucomicrobia_raw_abundance)
+```
+
+## All model summary outputs
+```{r}
+summary(acidobacteria_glmer) #SIGNIFICANT
+summary(actinobacteria_glmer)
+summary(bacteroidetes_glmer) #SIGNIFICANT
+summary(chloroflexi_glmer)
+summary(firmicutes_glmer) #SIGNIFICANT
+summary(gemmatimonadetes_glmer) #SIGNIFICANT
+summary(nitrospirae_glmer) #SIGNIFICANT
+summary(planctomycetes_glmer)
+summary(proteobacteria_glmer)
+summary(verruco_glmer)
+
+#chloroflexi was significant, so I am going to test for pairwise differences between treatments using a post-hoc Tukey test
+
+##Post-hoc Test for chloroflexi_glmer (summary output above)
+
+post_acidobacteria <- glht(acidobacteria_glmer, mcp(Location = "Tukey"))
+summary(post_acidobacteria) 
+
+post_bacteroidetes <- glht(bacteroidetes_glmer, mcp(Location = "Tukey"))
+summary(post_bacteroidetes) 
+
+post_firmicutes <- glht(firmicutes_glmer, mcp(Location = "Tukey"))
+summary(post_firmicutes) 
+
+post_gemmatimonadetes <- glht(gemmatimonadetes_glmer, mcp(Location = "Tukey"))
+summary(post_gemmatimonadetes) 
+
+post_nitrospirae <- glht(nitrospirae_glmer, mcp(Location = "Tukey"))
+summary(post_nitrospirae) 
+```
+
+## Plot Location results
+```{r}
+acidobacteria_location_plot <- ggplot(acidobacteria_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6, fill = "grey") +
+  geom_point(alpha = 0.8, show.legend = F) +
+  labs(x = "Location", y = "Raw Abundance") +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank()) +
+  theme(axis.ticks.x = element_blank())
+
+bacteroidetes_location_plot <- ggplot(bacteroidetes_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6, fill = "grey") +
+  geom_point(alpha = 0.8, show.legend = F) +
+  labs(x = "Location", y = "Raw Abundance") +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank()) +
+  theme(axis.ticks.x = element_blank())
+
+gemmatimonadetes_location_plot <- ggplot(gemmatimonadetes_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6, fill = "grey") +
+  geom_point(alpha = 0.8, show.legend = F) +
+  labs(x = "Location", y = "Raw Abundance") +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank()) +
+  theme(axis.ticks.x = element_blank())
+
+firmicutes_location_plot <- ggplot(firmicutes_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6, fill = "grey") +
+  geom_point(alpha = 0.8, show.legend = F) +
+  labs(x = "Location", y = "Raw Abundance") +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank()) +
+  theme(axis.ticks.x = element_blank())
+
+nitrospirae_location_plot <- ggplot(nitrospirae_raw_abundance, aes(x = Location, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6, fill = "grey") +
+  geom_point(alpha = 0.8, show.legend = F) +
+  labs(x = "Location", y = "Raw Abundance") +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 15))
+
+
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/phylum_comparison_figures/phylum_location_plots.pdf", width = 9, height = 18)
+
+plot_grid(acidobacteria_location_plot, bacteroidetes_location_plot, gemmatimonadetes_location_plot, firmicutes_location_plot, nitrospirae_location_plot, nrow = 5, labels = c("a","b","c","d","e"), label_size = 25)
+
+dev.off()
+
+##This figure will be altered to add the post-hoc significance values from the package multcomp.
+  
+```
+
+```{r}
+###All datasets below are for individual phyla (top 10) and show raw abundance data
+LT_rel_abundance <- phy_10_rel_abundance %>%
+  filter(Location == "LT") 
+
+NE_rel_abundance <- phy_10_rel_abundance %>%
+  filter(Location == "NE")
+
+SWALE_rel_abundance <- phy_10_rel_abundance %>%
+  filter(Location == "Swale")
+
+TARKIO_rel_abundance <- phy_10_rel_abundance %>%
+  filter(Location == "Tarkio")
+
+HELTON_rel_abundance <- phy_10_rel_abundance %>%
+  filter(Location == "Helton")
+
+PAWNEE_rel_abundance <- phy_10_rel_abundance %>%
+  filter(Location == "Pawnee")
+```
+
+## Visualize Top 10 phyla relative abundance in each location
+```{r}
+LT_rel_abundance$phylum <- factor(LT_rel_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+NE_rel_abundance$phylum <- factor(NE_rel_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+SWALE_rel_abundance$phylum <- factor(SWALE_rel_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+TARKIO_rel_abundance$phylum <- factor(TARKIO_rel_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+HELTON_rel_abundance$phylum <- factor(HELTON_rel_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+PAWNEE_rel_abundance$phylum <- factor(PAWNEE_rel_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+HELTON_phylum_rel_abundance_plot <- ggplot(HELTON_rel_abundance, aes(x = phylum, y = relative_abundance)) + 
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "#1B9E77") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", fill = "#1B9E77", pch = 21, show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank())
+
+LT_phylum_rel_abundance_plot <- ggplot(LT_rel_abundance, aes(x = phylum, y = relative_abundance)) + 
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "#D95F02") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", fill = "#D95F02", pch = 21, show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank())
+
+NE_phylum_rel_abundance_plot <- ggplot(NE_rel_abundance, aes(x = phylum, y = relative_abundance)) + 
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "#7570B3") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", fill = "#7570B3", pch = 21, show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank())
+
+PAWNEE_phylum_rel_abundance_plot <- ggplot(PAWNEE_rel_abundance, aes(x = phylum, y = relative_abundance)) + 
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "#E7298A") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", fill = "#E7298A", pch = 21, show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank())
+
+SWALE_phylum_rel_abundance_plot <- ggplot(SWALE_rel_abundance, aes(x = phylum, y = relative_abundance)) + 
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "#66A61E") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", fill = "#66A61E", pch = 21, show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank())
+
+TARKIO_phylum_rel_abundance_plot <- ggplot(TARKIO_rel_abundance, aes(x = phylum, y = relative_abundance)) + 
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6, fill = "#E6AB02") + 
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", fill = "#E6AB02", pch = 21, show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Phylum", y = "Relative Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 0.95)) +
+  theme(axis.ticks.x = element_blank())  +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.text.x = element_blank())
+
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/phylum_comparison_figures/phylum_rel_abundance_by_location.pdf", width = 8, height = 20)
+
+plot_grid(HELTON_phylum_rel_abundance_plot, LT_phylum_rel_abundance_plot, NE_phylum_rel_abundance_plot, PAWNEE_phylum_rel_abundance_plot, SWALE_phylum_rel_abundance_plot, TARKIO_phylum_rel_abundance_plot, ncol = 1, labels = c("a","b","c","d","e","f"), label_size = 25)
+
+dev.off()
+```
+
+## Filter each one of the above datasets to only include Near and No orchid treatments - this will try to get at whether there are any phyla that are only represented near to orchids
+```{r}
+acidobacteria_orchids <- acidobacteria_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+actinobacteria_orchids <- actinobacteria_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+bacteroidetes_orchids <- bacteroidetes_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+chloroflexi_orchids <- chloroflexi_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+firmicutes_orchids <- firmicutes_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+gemmatimonadetes_orchids <- gemmatimonadetes_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+nitrospirae_orchids <- nitrospirae_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+planctomycetes_orchids <- planctomycetes_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+proteobacteria_orchids <- proteobacteria_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+verrucomicrobia_orchids <- verrucomicrobia_raw_abundance %>%
+  filter(Near_Far == "Near" | Near_Far == "NO" | Near_Far == "NOE")
+
+```
+
+## Visualize and run general linear mixed effect models (with location as a random effect in each model) for each phylum to assess differences among different orchid DISTANCE treatments
+
+## ACIDOBACTERIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(acidobacteria_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+acidobacteria_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = acidobacteria_raw_abundance)
+```
+
+## ACTINOBACTERIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(actinobacteria_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+actinobacteria_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = actinobacteria_raw_abundance)
+```
+
+## BACTEROIDETES
+```{r}
+#Plot raw abundance at different distances
+ggplot(bacteroidetes_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+bacteroidetes_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = bacteroidetes_raw_abundance)
+```
+
+## CHLOROFLEXI
+```{r}
+#Plot raw abundance at different distances
+ggplot(chloroflexi_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+chloroflexi_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = chloroflexi_raw_abundance)
+```
+
+## FIRMICUTES
+```{r}
+#Plot raw abundance at different distances
+ggplot(firmicutes_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+firmicutes_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = firmicutes_raw_abundance)
+```
+
+## GEMMATIMONADETES
+```{r}
+#Plot raw abundance at different distances
+ggplot(gemmatimonadetes_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+gemmatimonadetes_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = gemmatimonadetes_raw_abundance)
+```
+
+## NITROSPIRAE
+```{r}
+#Plot raw abundance at different distances
+ggplot(nitrospirae_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+nitrospirae_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = nitrospirae_raw_abundance)
+```
+
+## PLANCTOMYCETES
+```{r}
+#Plot raw abundance at different distances
+ggplot(planctomycetes_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+planctomycetes_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = planctomycetes_raw_abundance)
+```
+
+## PROTEOBACTERIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(proteobacteria_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+proteobacteria_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = proteobacteria_raw_abundance)
+```
+
+## VERRUCOMICROBIA
+```{r}
+#Plot raw abundance at different distances
+ggplot(verrucomicrobia_raw_abundance, aes(x = Near_Far, y = raw_abundance)) +
+  geom_boxplot(show.legend = T, outlier.shape = NA, alpha = 0.6) +
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.8, show.legend = F)
+
+#Run general linear mixed effect model with negative binomial distribution (as inferred from ORCHIDS_distribution_analysis.rmd)
+verruco_glmer <- glmer.nb(raw_abundance ~ Near_Far + (1|Location), data = verrucomicrobia_raw_abundance)
+```
+
+## All model summary outputs
+```{r}
+#summary(acidobacteria_glmer) #For some reason this model would not run, but the graph makes it clear that there is no signficant difference among distances
+summary(actinobacteria_glmer)
+summary(bacteroidetes_glmer)
+summary(chloroflexi_glmer)
+summary(firmicutes_glmer)
+summary(gemmatimonadetes_glmer)
+summary(nitrospirae_glmer)
+summary(planctomycetes_glmer)
+summary(proteobacteria_glmer)
+summary(verruco_glmer)
+
+post_chloroflexi <- glht(chloroflexi_glmer, mcp(Near_Far = "Tukey"))
+summary(post_chloroflexi) #For some reason there are no significant differences here, even though the overall model was significant
+```
+
+
+## Visualize possible distribution fits
+```{r}
+#Get coefficients for normal distribution
+mu_mle_norm <- coef(fit_norm)[[1]]
+sd_mle_norm <- coef(fit_norm)[[2]]
+
+#Get coefficients for poisson distribution
+lambda_mle_pois <- coef(fit_pois)[[1]]
+
+#Get coefficients for negative binomial distribution
+mu_mle_nbinom <- coef(fit_nbinom)[[1]]
+size_mle_nbinom <- coef(fit_nbinom)[[2]]
+
+#Get coefficients for weibull distribution
+shape_mle_weibull <- coef(fit_weibull)[[1]]
+
+par(mfrow=c(1,1))
+plot(density(phy_10_raw_abundance$raw_abundance), xlab = 'Raw Abundance', lwd = 4, ylim = c(0, .001), xlim = c(0, 30000), main = "Fit of Distributions for Raw Abundance Data")
+curve(dpois(x, lambda = lambda_mle_pois), 0, 5000, col = 'blue', lwd = 2, add = T)
+curve(dnbinom(x, mu = mu_mle_nbinom, size = size_mle_nbinom), 0, 5000, col = 'orange', lwd = 4, lty = 2, add = T)
+curve(dnorm(x, mean = mu_mle_norm, sd = sd_mle_norm), -10, 5000, col = 'green', lwd = 2, add = T)
+curve(dweibull(x, shape = shape_mle_weibull), 0, 5000, col = 'red', lwd = 2, add = T)
+legend(6, 0.4, legend = c('data dist', 'poisson dist', 'neg. binomial dist', 'normal dist', 'weibull dist'), lty = 1, col = c('black','blue','orange', "green", "red"), lwd = c(4,2,2,2,2))
+
+```

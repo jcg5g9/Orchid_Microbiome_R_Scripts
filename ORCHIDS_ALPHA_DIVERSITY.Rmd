@@ -1,0 +1,435 @@
+---
+title: "ORCHIDS_ALPHA_DIVERSITY"
+author: "Joe Gunn"
+date: "5/21/2020"
+output: html_document
+---
+
+## Libraries needed for analysis
+```{r libraries, echo=FALSE}
+library(readxl)
+library(cowplot)
+library(tidyverse)
+library(vegan)
+library(nlme)
+library(lme4)
+library(factoextra)
+library(viridis)
+library(bbmle)
+library(car)
+library(multcomp)
+library(RColorBrewer)
+library(devtools)
+library(pairwiseAdonis)
+library(EcolUtils)
+library(plotly)
+```
+
+## Metadata
+```{r}
+#Read in site-level metadata and clean
+site_metadata <- read_excel("../../data/metadata/site_metadata.xlsx")
+
+site_metadata <- site_metadata %>%
+  mutate(Site = factor(Site), Near_Far = factor(Near_Far), Location = factor(Location), loc_abbr = factor(loc_abbr)) %>%
+  mutate(present_absent = ifelse(as.factor(Near_Far) == "NO" | as.factor(Near_Far) == "NOE", "Absent", "Present"))
+
+#Read in taxonomic level metadata and clean
+tax_metadata <- read_excel("../../data/metadata/tax_metadata.xlsx")
+
+tax_metadata <- tax_metadata %>%
+  mutate(kingdom = factor(kingdom),
+         phylum = factor(phylum), 
+         class = factor(class), 
+         order = factor(order), 
+         family = factor(family), 
+         genus = factor(genus), 
+         species = factor(species))
+```
+
+## Read-in raw data
+```{r}
+#Read in OTU raw abundance data. This data is organized as a matrix of individual microbial OTUS (rows) and sampling sites (columns). 
+soil_raw <- read_excel("../../data/excel_data/raw_data.xlsx")
+
+#Clean table
+colnames(soil_raw)[1] <- "otu_id"
+
+soil_raw <- soil_raw %>%
+  mutate(otu_id = as.character(otu_id)) %>%
+  mutate(otu_id = factor(otu_id))
+
+#Summarize raw microbial OTU data
+#Get number of OTUs
+otu_count <- soil_raw %>%
+  nrow() #84,960 OTUs
+
+#Get number of sites
+site_count <- soil_raw %>%
+  ncol() #24 sites (excluding otu id)
+
+read_count <- soil_raw[,-c(1)] %>%
+  colSums() #54,631 reads per sample - THE DATA IS ALREADY RAREFIED!
+
+
+#combine taxonomy data (tax_metadatat) and raw otu data (soil_raw)
+soil_all <- cbind(tax_metadata, soil_raw)
+```
+
+## Get Relative Abundance Data at the Phylum Level in a gathered dataset - this was produced in ORCHIDS_tax_confidence.rmd
+```{r}
+soil_data_phylum_raw <- soil_all[,-c(1,3:7)]
+
+soil_data_phylum_rel <- soil_data_phylum_raw %>%
+  mutate(LT0116S = LT0116S/54631,
+         LT0216S = LT0216S/54631,
+         NE0616S = NE0616S/54631,
+         P0116S = P0116S/54631,
+         P0216S = P0216S/54631,
+         P0316S = P0316S/54631,
+         H0316S = H0316S/54631,
+         H0216S = H0216S/54631,
+         H0116S = H0116S/54631,
+         LT0516S = LT0516S/54631,
+         T0416S = T0416S/54631,
+         NE0216S = NE0216S/54631,
+         NE0416S = NE0416S/54631,
+         S0216S = S0216S/54631,
+         LT0416S = LT0416S/54631,
+         NE0516S = NE0516S/54631,
+         S0116S = S0116S/54631,
+         LT0316S = LT0316S/54631,
+         NE0316S = NE0316S/54631,
+         NE0116S = NE0116S/54631,
+         T0316S = T0316S/54631,
+         NE0816S = NE0816S/54631,
+         NE0716S = NE0716S/54631,
+         T0116S = T0116S/54631)
+
+#Full Dataset with raw and relative abundance data
+soil_data_phylum_top10_raw_abundance_general <-soil_data_phylum_raw %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+  
+soil_data_phylum_top10_relative_abundance_general <-soil_data_phylum_rel %>% 
+  filter(phylum == "Verrucomicrobia" | phylum == "Proteobacteria" | phylum == "Actinobacteria" | phylum == "Acidobacteria" | phylum == "Chloroflexi" | phylum == "Planctomycetes" | phylum == "Bacteroidetes" | phylum == "Firmicutes" | phylum == "Nitrospirae" | phylum == "Gemmatimonadetes")
+```
+
+## Get raw abundance and relative abundance datasets that are ready to use for all analyses
+```{r}
+soil_data_phylum_top10_raw_abundance <- column_to_rownames(soil_data_phylum_top10_raw_abundance_general, "otu_id")
+soil_data_phylum_top10_relative_abundance <- column_to_rownames(soil_data_phylum_top10_relative_abundance_general, "otu_id")
+```
+
+## Get separate datasets without SWALE
+```{r}
+#Datasets with "Far" samples removed
+soil_data_phylum_top10_raw_abundance_noSWALE <- soil_data_phylum_top10_raw_abundance[,-c(15,18)]
+soil_data_phylum_top10_relative_abundance_noSWALE <- soil_data_phylum_top10_relative_abundance[,-c(15,18)]
+```
+
+## Get Distance matrix for all samples together
+```{r}
+#Clean the dataset for all OTUs at the phylum leel to prepare data for NMDS
+all_raw_abundance_distance_noSWALE <- soil_data_phylum_top10_raw_abundance_noSWALE[,-c(1)]
+all_raw_abundance_distance_noSWALE <- as.matrix(t(all_raw_abundance_distance_noSWALE))
+
+#Tranform data by total abundance across all sites
+all_transform_noSWALE <- decostand(all_raw_abundance_distance_noSWALE, "total")
+
+#Get distance matrix using Bray-Curtis distance
+all_dist_noSWALE <- vegdist(all_transform_noSWALE, "bray")
+```
+
+
+## Test for significant differences at the Phylum Level between locations and between distances for each of the 10 most abundant phyla using NMDS 
+### all analyses were conducted in the package vegan using NMDS methods
+```{r}
+###All datasets below are for individual phyla (top 10) and show raw abundance data
+acidobacteria_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Acidobacteria") 
+
+acidobacteria_raw_abundance_distance <- acidobacteria_raw_abundance_distance[,-c(1)]
+acidobacteria_raw_abundance_distance <- as.matrix(t(acidobacteria_raw_abundance_distance))
+
+actinobacteria_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Actinobacteria")
+
+actinobacteria_raw_abundance_distance <- actinobacteria_raw_abundance_distance[,-c(1)]
+actinobacteria_raw_abundance_distance <- as.matrix(t(actinobacteria_raw_abundance_distance))
+
+bacteroidetes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Bacteroidetes")
+
+bacteroidetes_raw_abundance_distance <- bacteroidetes_raw_abundance_distance[,-c(1)]
+bacteroidetes_raw_abundance_distance <- as.matrix(t(bacteroidetes_raw_abundance_distance))
+
+chloroflexi_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Chloroflexi")
+
+chloroflexi_raw_abundance_distance <- chloroflexi_raw_abundance_distance[,-c(1)]
+chloroflexi_raw_abundance_distance <- as.matrix(t(chloroflexi_raw_abundance_distance))
+
+firmicutes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Firmicutes")
+
+firmicutes_raw_abundance_distance <- firmicutes_raw_abundance_distance[,-c(1)]
+firmicutes_raw_abundance_distance <- as.matrix(t(firmicutes_raw_abundance_distance))
+
+gemmatimonadetes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Gemmatimonadetes")
+
+gemmatimonadetes_raw_abundance_distance <- gemmatimonadetes_raw_abundance_distance[,-c(1)]
+gemmatimonadetes_raw_abundance_distance <- as.matrix(t(gemmatimonadetes_raw_abundance_distance))
+
+nitrospirae_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Nitrospirae")
+
+nitrospirae_raw_abundance_distance <- nitrospirae_raw_abundance_distance[,-c(1)]
+nitrospirae_raw_abundance_distance <- as.matrix(t(nitrospirae_raw_abundance_distance))
+
+planctomycetes_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Planctomycetes")
+
+planctomycetes_raw_abundance_distance <- planctomycetes_raw_abundance_distance[,-c(1)]
+planctomycetes_raw_abundance_distance <- as.matrix(t(planctomycetes_raw_abundance_distance))
+
+proteobacteria_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Proteobacteria")
+
+proteobacteria_raw_abundance_distance <- proteobacteria_raw_abundance_distance[,-c(1)]
+proteobacteria_raw_abundance_distance <- as.matrix(t(proteobacteria_raw_abundance_distance))
+
+verrucomicrobia_raw_abundance_distance <- soil_data_phylum_top10_raw_abundance_noSWALE %>%
+  filter(phylum == "Verrucomicrobia")
+
+verrucomicrobia_raw_abundance_distance <- verrucomicrobia_raw_abundance_distance[,-c(1)]
+verrucomicrobia_raw_abundance_distance <- as.matrix(t(verrucomicrobia_raw_abundance_distance))
+```
+
+## Transform raw abundance data by total abundance per site, and then produce the distacne matrix for each phylum
+```{r}
+#Transform the data so that each raw abundance value is corrected for the total abundance of each site
+acidobacteria_dist_transform <- decostand(acidobacteria_raw_abundance_distance, "total")
+actinobacteria_dist_transform <- decostand(actinobacteria_raw_abundance_distance, "total")
+bacteroidetes_dist_transform <- decostand(bacteroidetes_raw_abundance_distance, "total")
+chloroflexi_dist_transform <- decostand(chloroflexi_raw_abundance_distance, "total")
+firmicutes_dist_transform <- decostand(firmicutes_raw_abundance_distance, "total")
+gemmatimonadetes_dist_transform <- decostand(gemmatimonadetes_raw_abundance_distance, "total")
+nitrospirae_dist_transform <- decostand(nitrospirae_raw_abundance_distance, "total")
+planctomycetes_dist_transform <- decostand(planctomycetes_raw_abundance_distance, "total")
+proteobacteria_dist_transform <- decostand(proteobacteria_raw_abundance_distance, "total")
+verrucomicrobia_dist_transform <- decostand(verrucomicrobia_raw_abundance_distance, "total")
+
+#Create distance matrix for each phylum using Bray-Curtis distance
+acidobacteria_dist <- vegdist(acidobacteria_dist_transform, "bray")
+actinobacteria_dist <- vegdist(actinobacteria_dist_transform, "bray")
+bacteroidetes_dist <- vegdist(bacteroidetes_dist_transform, "bray")
+chloroflexi_dist <- vegdist(chloroflexi_dist_transform, "bray")
+firmicutes_dist <- vegdist(firmicutes_dist_transform, "bray")
+gemmatimonadetes_dist <- vegdist(gemmatimonadetes_dist_transform, "bray")
+nitrospirae_dist<- vegdist(nitrospirae_dist_transform, "bray")
+planctomycetes_dist <- vegdist(planctomycetes_dist_transform, "bray")
+proteobacteria_dist <- vegdist(proteobacteria_dist_transform, "bray")
+verrucomicrobia_dist <- vegdist(verrucomicrobia_dist_transform, "bray")
+```
+
+## Get overall Shannon Diversity
+## Shannon diversity was used as a proxy for alpha diversity and calculated in the package vegan
+```{r}
+#Get Shannon Diversity index across all sites and for all OTUS together
+all_shan <- diversity(all_dist_noSWALE, index = "shannon") %>%
+  as.data.frame()
+
+#Turn the shannon diversity values into a usable dataframe
+all_shan <- all_shan %>% rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(all_shan)[2] <- "shan_div"
+
+#Join with metadata
+all_shan_withmeta <- all_shan %>%
+  left_join(site_metadata, by = "Site")
+
+#Run a linear model on shannon diversity between sites with and without orchids,
+shan_all_lm <- lm(shan_div ~ present_absent, data = all_shan_withmeta)
+summary(shan_all_lm) ##very significant! P = 0.0014
+
+#Plot shannon diversity for all OTUs together
+all_shan_plot <- ggplot(all_shan_withmeta, aes(x = present_absent, y = shan_div, fill = present_absent)) +
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6) + 
+  geom_point(stat = "identity", position = position_jitterdodge(), size = 3, alpha = 0.9, pch = 21, color = "black", show.legend = T) +
+  theme_set(theme_cowplot(12)) +
+  labs(x = "Orchid History", y = "Shannon Diversity Index", fill = "Orchid History", color = "Orchid History") +
+  scale_fill_manual(values = c("navyblue", "darkorchid1")) +
+  scale_color_manual(values = c("navyblue", "darkorchid1")) +
+  theme(legend.background = element_rect(linetype = "solid", color = "black")) +
+  theme(legend.margin = margin(3,3,3,3)) +
+  theme(legend.position = c(0.05,0.05)) +
+  theme(legend.title = element_text(size = 20, face = "bold")) +
+  theme(legend.text = element_text(size = 20)) +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text = element_text(size = 20))
+
+
+```
+
+## Get Shannon Diversity for each phylum
+```{r}
+#Get shannon diversity with each of the top 10 phyla
+acidobacteria_shan <- diversity(acidobacteria_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(acidobacteria_shan)[2] <- "Acidobacteria"
+acidobacteria_shan_withmeta <- acidobacteria_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_acidobacteria_lm <- lm(Acidobacteria ~ present_absent, data = acidobacteria_shan_withmeta)
+summary(shan_acidobacteria_lm)
+
+actinobacteria_shan <- diversity(actinobacteria_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(actinobacteria_shan)[2] <- "Actinobacteria"
+actinobacteria_shan_withmeta <- actinobacteria_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_actinobacteria_lm <- lm(Actinobacteria ~ present_absent, data = actinobacteria_shan_withmeta)
+summary(shan_actinobacteria_lm)
+
+bacteroidetes_shan <- diversity(bacteroidetes_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(bacteroidetes_shan)[2] <- "Bacteroidetes"
+bacteroidetes_shan_withmeta <- bacteroidetes_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_bacteroidetes_lm <- lm(Bacteroidetes ~ present_absent, data = bacteroidetes_shan_withmeta)
+summary(shan_bacteroidetes_lm)
+
+chloroflexi_shan <- diversity(chloroflexi_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(chloroflexi_shan)[2] <- "Chloroflexi"
+chloroflexi_shan_withmeta <- chloroflexi_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_chloroflexi_lm <- lm(Chloroflexi ~ present_absent, data = chloroflexi_shan_withmeta)
+summary(shan_chloroflexi_lm)
+
+firmicutes_shan <- diversity(firmicutes_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(firmicutes_shan)[2] <- "Firmicutes"
+firmicutes_shan_withmeta <- firmicutes_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_firmicutes_lm <- lm(Firmicutes ~ present_absent, data = firmicutes_shan_withmeta)
+summary(shan_firmicutes_lm)
+
+gemmatimonadetes_shan <- diversity(gemmatimonadetes_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(gemmatimonadetes_shan)[2] <- "Gemmatimonadetes"
+gemmatimonadetes_shan_withmeta <- gemmatimonadetes_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_gemmatimonadetes_lm <- lm(Gemmatimonadetes ~ present_absent, data = gemmatimonadetes_shan_withmeta)
+summary(shan_gemmatimonadetes_lm)
+
+nitrospirae_shan <- diversity(nitrospirae_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(nitrospirae_shan)[2] <- "Nitrospirae"
+nitrospirae_shan_withmeta <- nitrospirae_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_nitrospirae_lm <- lm(Nitrospirae ~ present_absent, data = nitrospirae_shan_withmeta)
+summary(shan_nitrospirae_lm)
+
+planctomycetes_shan <- diversity(planctomycetes_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(planctomycetes_shan)[2] <- "Planctomycetes"
+planctomycetes_shan_withmeta <- planctomycetes_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_planctomycetes_lm <- lm(Planctomycetes ~ present_absent, data = planctomycetes_shan_withmeta)
+summary(shan_planctomycetes_lm)
+
+proteobacteria_shan <- diversity(proteobacteria_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(proteobacteria_shan)[2] <- "Proteobacteria"
+proteobacteria_shan_withmeta <- proteobacteria_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_proteobacteria_lm <- lm(Proteobacteria ~ present_absent, data = proteobacteria_shan_withmeta)
+summary(shan_proteobacteria_lm)
+
+verrucomicrobia_shan <- diversity(verrucomicrobia_dist, index = "shannon") %>%
+  as.data.frame() %>% 
+  rownames_to_column("Site") %>%
+  mutate(Site = factor(Site))
+colnames(verrucomicrobia_shan)[2] <- "Verrucomicrobia"
+verrucomicrobia_shan_withmeta <- verrucomicrobia_shan %>%
+  left_join(site_metadata, by = "Site")
+
+shan_verrucomicrobia_lm <- lm(Verrucomicrobia ~ present_absent, data = verrucomicrobia_shan_withmeta)
+summary(shan_verrucomicrobia_lm)
+
+shan <- acidobacteria_shan_withmeta %>%
+  left_join(actinobacteria_shan_withmeta) %>%
+  left_join(bacteroidetes_shan_withmeta) %>%
+  left_join(chloroflexi_shan_withmeta) %>%
+  left_join(firmicutes_shan_withmeta) %>%
+  left_join(gemmatimonadetes_shan_withmeta) %>%
+  left_join(nitrospirae_shan_withmeta) %>%
+  left_join(planctomycetes_shan_withmeta) %>%
+  left_join(proteobacteria_shan_withmeta) %>%
+  left_join(verrucomicrobia_shan_withmeta)
+
+shan_reorder <- shan[,c(1,3,4,5,6,2,7:15)]
+
+shan_gather <- shan_reorder %>%
+  gather(Acidobacteria:Verrucomicrobia, key = "Phylum", value = "shan_div")
+
+shan_gather$Phylum <- factor(shan_gather$Phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes")) #reorder levels - otherwise it will automatically list aplphabetically
+
+
+phy_shan_plot <- ggplot(shan_gather, aes(x = present_absent, y = shan_div, fill = present_absent)) +
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6) + 
+  geom_point(size = 3, stat = "identity", position = position_jitterdodge(), alpha = 0.9, pch = 21, color = "black", show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  coord_flip() +
+  facet_wrap(~Phylum, ncol = 1, scales = "fixed", shrink = F) +
+  labs(x = "Phylum", y = "Shannon Diversity Index") +
+  scale_fill_manual(values = c("navyblue", "darkorchid1")) +
+  scale_color_manual(values = c("navyblue", "darkorchid1")) +
+  theme(strip.background = element_rect(fill = "white")) +
+  theme(strip.text = element_text(size = 20, hjust = 0.1)) +
+  theme(panel.background = element_rect(color = "black", fill = "white", size = 1, linetype = "solid")) +
+  theme(panel.margin = unit(1, "lines")) +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.y = element_blank()) +
+  theme(axis.ticks.y = element_blank()) +
+  theme(axis.text = element_text(size = 20)) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.title.y = element_blank()) +
+  theme(axis.line = element_blank())
+
+
+
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/alpha_diversity_figures/present_absent_plots.pdf", width = 15, height = 15)
+
+plot_grid(all_shan_plot, phy_shan_plot, ncol = 2, labels = c("a","b"), label_size = 25, label_y = 1.002)
+
+dev.off()
+```
