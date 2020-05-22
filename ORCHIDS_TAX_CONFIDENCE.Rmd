@@ -4,25 +4,6 @@ author: "Joe Gunn"
 date: "5/20/2020"
 output: html_document
 ---
-# ORCHIDS - TAXONOMIC ANALYSIS
-
-Purpose: Here, my primary goal is to summarize the full community dataset by determining the total number of OTUs, the total number of rarefied sequence reads per site, the total number of rarefied reads across the entire dataset, and the total number of phyla. My first analysis determines the proportion of all OTUs that are classified taxonomically to each taxonomic level (kingdom, phylum, class, order, family, genus, species). This analysis allows us to determine the approximately confidence with which each taxonomic level can be analyzed. I also aim to determine the top 10 phyla in the dataset (the 10 phyla with the highest abundance across the whole dataset). To do this, I calculate the relative abundance of each phylum by totalling the number of reads across all sites for each phylum and dividing by the total number of reads in the whole dataset. I arrange the phyla in order from greatest to lowest relative abundance and only select the top 10 most abundant phyla.
-
-INFO FOR FULL DATASET:
-
-Total Number of Sites: 24
-Rarefied Reads per Site: 54,631
-Total Rarefied Reads in the dataset [54,631 X 24]: 1,311,144
-Total OTUs: 84,960
-    Total Phyla: 61
-    
-INFO FOR TOP TEN PHYLA: 
-
-Total Number of Sites: 24
-Rarefied Reads per Site: average number 53324.5 (97.61 % of total)
-Total Rarefied Reads in the dataset [sum of reads across sites]: 1,279,788 (97.61 % of total)
-Total OTUs: 79,588 (93.68 % of the total)
-
 ## Libraries needed for analysis
 ```{r libraries, echo=FALSE}
 library(readxl)
