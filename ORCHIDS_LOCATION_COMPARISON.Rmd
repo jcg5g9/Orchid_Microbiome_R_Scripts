@@ -139,11 +139,32 @@ phy_10_rel_abundance <- soil_data_phylum_top10_rel_abundance_sums %>%
 
 ##Clean up this dataset so that it can be joined with metadata
 phy_10_raw_abundance <- phy_10_raw_abundance %>%
-  left_join(site_metadata, by = "Site") #This dataset is ready to use for analyses 
+  left_join(site_metadata, by = "Site") %>%
+  mutate(log_abundance = log10(raw_abundance)) #This dataset is ready to use for analyses 
 
 ##Clean up this dataset so that it can be joined with metadata
 phy_10_rel_abundance <- phy_10_rel_abundance %>%
   left_join(site_metadata, by = "Site") #This dataset is ready to use for analyses 
+```
+## Run general linear mixed effect model on abundance by location overall
+```{r}
+#Run a general linear model on raw abundance across locations, not splitting the dataset by different phyla
+all_glmer <- glmer.nb(raw_abundance ~ loc_abbr + (1|Near_Far), data = phy_10_raw_abundance)
+all_p <- Anova(all_glmer)$"Pr(>Chisq)" #Very insignificant p = 0.999
+
+#Plot all OTU abundance by location
+pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/phylum_comparison_figures/location_comparisons_overall.pdf", width = 8, height = 5)
+
+ggplot(phy_10_raw_abundance, aes(x = loc_abbr, y = log_abundance, fill = Location)) +
+  geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6) +
+  geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", pch = 21, show.legend = F) +
+  theme_set(theme_cowplot(12)) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Location", y = "Log Abundance") +
+  theme(axis.title = element_text(size = 15)) +
+  theme(axis.text = element_text(size = 15))
+
+dev.off()
 ```
 
 ## Observe differences in relative abundance of the top 10 phyla for each location to see if there are any outlier locations - SWALE is a clear outlier, with most of its relative abundance accounted for in proteobacteria rather than verrucomicrobia
@@ -185,29 +206,29 @@ verrucomicrobia_raw_abundance <- phy_10_raw_abundance %>%
 ## Get mean relative abundance for each phylum
 ```{r}
 #Get mean relative abundance for each of the top 10 phyla
-phy_10_rel_abundance_phy_means <- phy_10_rel_abundance %>%
+phy_10_raw_abundance_phy_means <- phy_10_raw_abundance %>%
   group_by(phylum) %>%
-  summarize(mean_rel = mean(relative_abundance))
+  summarize(mean_raw = mean(log_abundance))
 
 #Bind the mean of the top 10 phyla to the abundance dataset so that they can be mapped onto the same figure
-phy_10_rel_abundance <- phy_10_rel_abundance %>%
-  left_join(phy_10_rel_abundance_phy_means, by = "phylum")
+phy_10_raw_abundance <- phy_10_raw_abundance %>%
+  left_join(phy_10_raw_abundance_phy_means, by = "phylum")
 ```
 
-
+## Plot relative abundance for each phylum by location
 ```{r}
-phy_10_rel_abundance$phylum <- factor(phy_10_rel_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes"))
+phy_10_raw_abundance$phylum <- factor(phy_10_raw_abundance$phylum, levels = c("Verrucomicrobia","Proteobacteria","Actinobacteria","Acidobacteria","Chloroflexi","Planctomycetes", "Bacteroidetes","Firmicutes","Nitrospirae","Gemmatimonadetes"))
 
 pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/phylum_comparison_figures/location_comparisons_by_phylum.pdf", width = 10, height = 12)
 
-ggplot(phy_10_rel_abundance, aes(x = loc_abbr, y = relative_abundance, fill = Location)) + 
+ggplot(phy_10_raw_abundance, aes(x = loc_abbr, y = log_abundance, fill = Location)) + 
   geom_boxplot(show.legend = F, outlier.shape = NA, alpha = 0.6) + 
   geom_point(position = position_jitter(width = 0.2), alpha = 0.6, color = "black", pch = 21, show.legend = F) +
-  geom_hline(aes(yintercept = mean_rel), linetype = "longdash", size = 0.5) +
+  geom_hline(aes(yintercept = mean_raw), linetype = "longdash", size = 0.5) +
   theme_set(theme_cowplot(12)) +
   facet_wrap(~phylum, ncol = 2) +
   scale_fill_brewer(palette = "Dark2") +
-  labs(x = "Location", y = "Relative Abundance") +
+  labs(x = "Location", y = "Log Abundance") +
   theme(strip.background = element_rect(fill = "white")) +
   theme(strip.text = element_text(size = 15)) +
   theme(panel.background = element_rect(color = "black", fill = "white", size = 1, linetype = "solid")) +
@@ -221,6 +242,7 @@ ggplot(phy_10_rel_abundance, aes(x = loc_abbr, y = relative_abundance, fill = Lo
 dev.off()
 ```
 
+## Run general linear mixed effect models on abundance by location for each phylum
 ```{r}
 ## Visualize and run general linear mixed effect models (with location as a random effect in each model) for each phylum to assess differences among different orchid LOCATION treatments
 acidobacteria_glmer <- glmer.nb(raw_abundance ~ loc_abbr + (1|Near_Far), data = acidobacteria_raw_abundance)
