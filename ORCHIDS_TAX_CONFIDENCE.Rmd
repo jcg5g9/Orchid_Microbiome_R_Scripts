@@ -8,6 +8,7 @@ output: html_document
 ```{r libraries, echo=FALSE}
 library(readxl)
 library(cowplot)
+library(car)
 library(tidyverse)
 library(vegan)
 library(nlme)
@@ -15,7 +16,7 @@ library(lme4)
 library(factoextra)
 library(viridis)
 library(bbmle)
-library(car)
+detach(package:plyr)
 ```
 
 ## Metadata
