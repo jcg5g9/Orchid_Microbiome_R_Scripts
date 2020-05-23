@@ -18,7 +18,6 @@ library(viridis)
 library(bbmle)
 library(car)
 library(multcomp)
-library(plyr)
 ```
 
 
@@ -165,12 +164,43 @@ phy_10_raw_abundance_withOrchids <- phy_10_raw_abundance_withOrchids %>%
   mutate(Near_Far = as.character(Near_Far)) %>%
   mutate(Near_Far = as.double(Near_Far))
 
+##Create an altered dataset that calculates the average raw abundance per site across all phyla and append it to the existing dataset
+site_abundance_means <- phy_10_raw_abundance_withOrchids %>%
+  group_by(Site) %>%
+  summarize(mean_by_site = mean(raw_abundance)) %>% 
+  mutate(Site = factor(Site))
+
+site_abundance_means$phylum <- c(rep("site_mean", times = 16))
+colnames(site_abundance_means)[2] <- "raw_abundance"
+
+site_abundance_means <- site_abundance_means %>%
+  left_join(site_metadata, by = "Site")
+  
+levels(site_abundance_means$Near_Far)[levels(site_abundance_means$Near_Far) == "Near"] <- "0"
+levels(site_abundance_means$Near_Far)[levels(site_abundance_means$Near_Far) == "Intermediate"] <- "100"
+levels(site_abundance_means$Near_Far)[levels(site_abundance_means$Near_Far) == "Far"] <- "200"
+
+site_abundance_means <- site_abundance_means %>%
+  mutate(log_abundance = log10(raw_abundance))
+
+site_abundance_means <- site_abundance_means[,c(3,1,2,4:8)]
+
+phy_10_raw_abundance_withOrchids_withMeans <- rbind(phy_10_raw_abundance_withOrchids, site_abundance_means)
+
+phy_10_raw_abundance_withOrchids_withMeans <- phy_10_raw_abundance_withOrchids_withMeans %>%
+  mutate(Near_Far = as.double(Near_Far))
+
+highlight_points <- phy_10_raw_abundance_withOrchids_withMeans %>%
+  filter(phylum == "site_mean")
+
 #Plot overall effect of distance on phylum abundance, coloring each set of points by their corresponding phylum
 pdf("/Users/joegunn/Desktop/Grad_School_Stuff/Research/Projects/Soil_Microbiome/visualization/distance_comparison_figures/all_otus_distance_plot.pdf", width = 8, height = 5)
 
 ggplot(phy_10_raw_abundance_withOrchids, aes(x = Near_Far, y = log_abundance, fill = phylum)) +
   geom_point(size = 3, alpha = 0.9, position = position_jitter(width = 5), pch = 21, color = "black", show.legend = F) + 
+  geom_point(data = highlight_points, aes(x = Near_Far, y = log_abundance), fill = 'red', color = "black",size=3, alpha = 0.9, position = position_jitter(width = 5), pch = 21, show.legend = F) +
   geom_smooth(aes(color = phylum), method = lm, se = F, show.legend = F) +
+  geom_smooth(data = highlight_points, color = "red", method = lm, se = F, show.legend = F) +
   labs(x = "Distance from Orchid (cm)", y = "Log Abundance", fill = "Phylum", color = "Phylum") +
   scale_fill_viridis(discrete = T, option = "viridis") + 
   scale_color_viridis(discrete = T, option = "viridis") +
