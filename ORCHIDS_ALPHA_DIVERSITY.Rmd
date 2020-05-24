@@ -250,8 +250,16 @@ all_shan_withmeta <- all_shan %>%
   left_join(site_metadata, by = "Site")
 
 #Run a linear model on shannon diversity between sites with and without orchids,
-shan_all_lm <- lm(shan_div ~ present_absent, data = all_shan_withmeta)
-summary(shan_all_lm) ##very significant! P = 0.0014
+shan_all_present_absent_lm <- lm(shan_div ~ present_absent, data = all_shan_withmeta)
+summary(shan_all_present_absent_lm) ##very significant! P = 0.0014
+
+#Run a linear model on shannon diversity between distances from orchids, using location as a random effect
+shan_all_distance_lme <- lme(shan_div ~ Near_Far, random = ~1|Location, data = all_shan_withmeta)
+summary(shan_all_distance_lme) #Nothing is significant
+
+#Run a linear model on shannon diversity between locations
+shan_all_location_lm <- lm(shan_div ~ Location, data = all_shan_withmeta)
+summary(shan_all_location_lm)
 
 #Plot shannon diversity for all OTUs together
 all_shan_plot <- ggplot(all_shan_withmeta, aes(x = present_absent, y = shan_div, fill = present_absent)) +
@@ -268,8 +276,6 @@ all_shan_plot <- ggplot(all_shan_withmeta, aes(x = present_absent, y = shan_div,
   theme(legend.text = element_text(size = 20)) +
   theme(axis.title = element_text(size = 20)) +
   theme(axis.text = element_text(size = 20))
-
-
 ```
 
 ## Get Shannon Diversity for each phylum
